@@ -1,13 +1,16 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "aspen",
-  "name": "SLGPlus",
+  "name": "SLGPlus - Documentation",
   "colors": {
     "primary": "#16A34A",
     "light": "#07C983",
     "dark": "#15803D"
   },
-  "favicon": "/favicon.svg",
+  "favicon": {
+    "light": "/images/SLGphoto.jpg",
+    "dark": "/images/SLGphoto.jpg"
+  },
   "navigation": {
     "languages": [
       {
@@ -91,16 +94,10 @@
     ]
   },
   "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "light": "/images/SLGphoto.jpg",
+    "dark": "/images/SLGphoto.jpg"
   },
   "navbar": {
-    "links": [
-      {
-        "href": "mailto:SLGPlus66@gmail.com",
-        "label": "Contact"
-      }
-    ],
     "primary": {
       "type": "button",
       "label": "GitHub",
@@ -123,5 +120,8 @@
     "socials": {
       "github": "https://github.com/SLGPlus"
     }
+  },
+  "appearance": {
+    "default": "dark"
   }
 }
