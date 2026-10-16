@@ -1,7 +1,7 @@
 ---
-title: "Architecture technique de SLGPlus en 5 dépôts"
+title: "Architecture technique de SLGPlus"
 sidebarTitle: "Architecture"
-description: "Vue d'ensemble de l'architecture SLGPlus : 5 dépôts, flux entre frontend, API Python, microservice Go, forum Flarum, MariaDB, IA Gemini et zrok."
+description: "Vue d'ensemble de l'architecture SLGPlus."
 icon: "server"
 ---
 
@@ -11,25 +11,25 @@ SLGPlus est structuré en 5 dépôts indépendants qui communiquent via HTTP. Ch
 
 ```mermaid
 graph LR
-    A[Frontend<br/>HTML/CSS/JS] -->|HTTPS / zrok| B[API Flask<br/>Python / port 5000]
+    A[Frontend<br/>HTML/CSS/JS] -->|HTTPS zrok| B[API Flask<br/>Python: port 5000]
     B -->|HTTP| C[Microservice Go<br/>ÉcoleDirecte / port 8080]
     B -->|HTTP| D[Forum Flarum<br/>PHP / MariaDB]
     B -->|MariaDB| E[(Base de données)]
     B -->|HTTPS| F[IA Gemini<br/>Modération]
-    A -->|zrok tunnel| G[API publique<br/>api-slgplus.shares.zrok.io]
+   
     H[Dashboard<br/>Python / port 9000] -->|MariaDB| E
     H -->|Windows services| I[MariaDB / Apache / zrok]
 ```
 
 ## Les 5 dépôts
 
-| Dépôt | Technologie | Rôle | Port |
-| --- | --- | --- | --- |
-| [slgplus-frontend](https://github.com/SLGPlus/SLGPlus-Frontend) | HTML, CSS, JS vanilla | Pages du portail : actualités, cantine, CDI, objets perdus | 8000 (PHP intégré) |
-| [slgplus-backend](https://github.com/SLGPlus/SLGPlus-Backend) | Python 3.10, Flask, Waitress | API REST, sessions, modération, passerelle forum | 5000 |
-| slgplus-backend (edlogin.go) | Go 1.22 | Connexion à l'API ÉcoleDirecte avec double authentification | 8080 |
-| [slgplus-backend](https://github.com/SLGPlus/SLGPlus-Backend) (flarum/) | PHP, Flarum 1.8 | Forum des élèves avec modération IA | 80 (Apache) |
-| [slgplus-serverdashboard](https://github.com/SLGPlus/SLGPlus-ServerDashboard) | Python, Flask | Supervision des services Windows et de la base de données | 9000 |
+| Dépôt | Technologie | Rôle | Port | URL ZROK |
+| --- | --- | --- | --- | --- |
+| [slgplus-frontend](https://github.com/SLGPlus/SLGPlus-Frontend) | HTML, CSS, JS vanilla | Pages du portail : actualités, cantine, CDI, objets perdus | 8000 (PHP intégré) | N/A |
+| [slgplus-backend](https://github.com/SLGPlus/SLGPlus-Backend) | Python 3.10, Flask, Waitress | API REST, sessions, modération, passerelle forum | 5000 | api-slgplus.shares.zrok.io |
+| slgplus-backend (edlogin.go) | Go 1.22 | Connexion à l'API ÉcoleDirecte avec double authentification | 8080 | ed-api-slgplus.shares.zrok.io |
+| [slgplus-backend](https://github.com/SLGPlus/SLGPlus-Backend) (flarum/) | PHP, Flarum 1.8 | Forum des élèves avec modération IA | 80 (Apache) | [slgplus.shares.zrok.io/](https://slgplus.shares.zrok.io/)flarum-forum |
+| [slgplus-serverdashboard](https://github.com/SLGPlus/SLGPlus-ServerDashboard) | Python, Flask | Supervision des services Windows et de la base de données | 9000 | dashboard-slgplus.shares.zrok.io |
 
 ## Flux de données
 
@@ -65,37 +65,15 @@ graph LR
   </Accordion>
 </AccordionGroup>
 
-## Choix techniques
-
-<AccordionGroup>
-  <Accordion title="Pourquoi zrok pour l'accès public ?">
-    L'API utilise un tunnel zrok (`api-slgplus.shares.zrok.io`) pour être accessible depuis l'extérieur sans configuration de pare-feu. Le frontend ajoute automatiquement l'en-tête `skip_zrok_interstitial` pour contourner la page intermédiaire.
-  </Accordion>
-
-  <Accordion title="Pourquoi un microservice séparé en Go ?">
-    La connexion à ÉcoleDirecte nécessite une gestion fine des cookies, des tokens et du challenge 2FA. Le microservice Go isole cette logique complexe du code Python et évite le blocage de l'API principale en cas de latence du service externe.
-  </Accordion>
-
-  <Accordion title="Pourquoi MariaDB et pas SQLite ?">
-    MariaDB gère le pool de connexions (64 connexions configurées, soit environ 400 requêtes simultanées) et permet à plusieurs composants (API, dashboard, Flarum) d'accéder aux données en parallèle.
-  </Accordion>
-
-  <Accordion title="Modération par IA Gemini">
-    Chaque message et titre de discussion passe par un modèle Gemini 3.1 Flash Lite. Plusieurs clés API sont utilisées en rotation pour répartir la charge. L'IA bloque les contenus inappropriés (insultes, harcèlement, informations personnelles) et corrige l'orthographe tout en conservant le ton naturel.
-  </Accordion>
-</AccordionGroup>
-
 ## Versions
 
 Le backend expose sa version via `GET /` :
 
 ```json
 {
-  "version": "v2.0.2-SQL"
+  "version": "NUM_VERSION"
 }
 ```
-
-Cette version indique la branche SQL de l'API, qui repose sur MariaDB avec un pool de connexions géré par le driver Python `mariadb`.
 
 <Tip>
   Le frontend et le backend évoluent indépendamment. Le workflow GitHub Actions du frontend déploie automatiquement sur l'hébergeur FTP à chaque merge de la branche `Dev` vers `main`.

@@ -1,39 +1,20 @@
 ---
 title: "Forum Flarum : communauté des élèves avec modération IA"
-description: "SLGPlus intègre Flarum 1.8 comme forum communautaire. Les comptes sont créés automatiquement, les messages sont modérés par IA (Gemini et Cerebras) et des limites quotidiennes protègent contre le spam."
+description: "SLGPlus intègre Flarum 1.8 comme backend du forum communautaire. Les comptes sont créés automatiquement, les messages sont modérés par IA (Gemini et Cerebras) et des limites quotidiennes protègent contre le spam."
 sidebarTitle: "Forum Flarum"
 icon: "comments"
 ---
 
 Le forum est géré par une installation [Flarum](https://flarum.org/) 1.8 située dans `api_source/flarum/`. L'API Python sert de passerelle : elle crée les comptes, modère les contenus via IA et applique des limites quotidiennes.
 
-## Extensions installées
-
-Le `composer.json` référence les extensions suivantes :
-
-| Extension | Rôle |
-| --- | --- |
-| `flarum/approval` | Modération des messages |
-| `flarum/bbcode` | Formatage BBCode |
-| `flarum/emoji` | Emojis |
-| `flarum/extension-manager` | Gestion des extensions |
-| `flarum/flags` | Signalement de contenus |
-| `flarum/likes` | J'aime |
-| `flarum/lock` | Verrouillage de discussions |
-| `flarum/markdown` | Markdown |
-| `flarum/mentions` | Mentions utilisateur |
-| `flarum/nicknames` | Surnoms |
-| `flarum/pusher` | Temps réel |
-| `flarum/statistics` | Statistiques |
-| `flarum/sticky` | Discussions épinglées |
-| `flarum/subscriptions` | Abonnements |
-| `flarum/suspend` | Suspensions |
-| `flarum/tags` | Tags et catégories |
-
 Le dossier `extend/` contient deux extensions locales :
 
 - `CorsMiddleware.php` : CORS pour les origines autorisées
-- `BadWordsListener.php` : modération locale + modération IA via Cerebras
+- `BadWordsListener.php` : modération locale + modération IA
+
+<Danger>
+  La modération cerebras à étée abandonnée pour gemini. Le script est donc un résidu de l'ancienne modération et doit être supprimé.
+</Danger>
 
 ## Passerelle API Python
 
@@ -41,14 +22,14 @@ Le dossier `extend/` contient deux extensions locales :
 
 Lors de la première connexion, `POST /forum/login/flarum` crée l'utilisateur `Prénom_Nom` dans Flarum et l'ajoute au groupe correspondant à sa classe :
 
-| Classe | Groupe |
+| Classe | ID Groupe |
 | --- | --- |
 | 6e | 5 |
 | 5e | 6 |
 | 4e | 7 |
 | 3e | 8 |
 
-Le mot de passe est dérivé de façon déterministe :
+Le mot de passe est dérivé de façon déterministe : 
 
 ```python title="Dérivation du mot de passe Flarum"
 def _derive_flarum_password(email, prenom, sexe, classe):
@@ -69,18 +50,7 @@ L'administrateur Flarum (id 1) n'est pas limité. Quand un utilisateur atteint s
 
 ## Modération IA
 
-SLGPlus utilise une double modération : une en local via l'extension Flarum (`BadWordsListener`), et une via l'API Python (`_moderate_and_correct`) avec Gemini.
-
-### Modération locale (Cerebras)
-
-L'extension `BadWordsListener` vérifie chaque message avant sauvegarde :
-
-1. **Liste de mots interdits** : comparaison directe avec une liste stockée dans `badwords_fr.txt`, avec normalisation ( suppression d'espaces, substitutions 0->o, 3->e, etc.)
-2. **Modération IA via Cerebras** : si le message passe le filtre local, il est envoyé au modèle `gpt-oss-120b` de Cerebras. La réponse doit être `OUI` ou `NON: raison`.
-
-<Warning>
-  L'extension `BadWordsListener` contient une clé API Cerebras codée en dur dans le fichier PHP. Cette valeur doit être déplacée dans une variable d'environnement ou un fichier de configuration, puis renouvelée.
-</Warning>
+SLGPlus utilise une modération via l'API Python (`_moderate_and_correct`) avec Gemini.
 
 ### Modération API Python (Gemini)
 

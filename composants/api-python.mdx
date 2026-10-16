@@ -1,6 +1,5 @@
 ---
 title: "API Python : serveur principal Flask de SLGPlus"
-description: "L'API Python constitue le cœur de SLGPlus. Elle gère les sessions, les actualités, les objets perdus, les idées et la passerelle vers le forum avec Flask, Flask-RESTful et Waitress."
 sidebarTitle: "API Python"
 icon: "python"
 ---
@@ -45,10 +44,6 @@ L'API attend un fichier `config.yml` placé dans le dossier d'exécution. Les cl
 | `apikeys` | `flarum_master` | Clé d'API maître de Flarum |
 | `apikeys` | `gemini_keys` | Liste de clés Gemini (rotation) |
 | `forum` | `limits.discussions`, `limits.posts` | Limites quotidiennes du forum |
-
-<Warning>
-  Certaines clés (`crontoken`, `forum.limits`) sont lues par `app.py` mais absentes du modèle `config_template.yml`. Elles doivent être ajoutées manuellement. Le fichier `config.yml` ne doit jamais être commité.
-</Warning>
 
 ## Pool de connexions MariaDB
 

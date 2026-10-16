@@ -42,12 +42,10 @@
                 "group": "Guides",
                 "icon": "compass",
                 "pages": [
-                  "guides/developpement-local",
                   "guides/roles-et-sessions",
                   "guides/moderation-ia",
                   "guides/deploiement",
-                  "guides/securite",
-                  "guides/depannage"
+                  "guides/securite"
                 ]
               }
             ]

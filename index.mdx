@@ -1,23 +1,26 @@
 ---
-title: "SLGPlus : portail d'informations du collège Saint-Louis de Gonzague"
+title: "Documentation SLGPlus"
 sidebarTitle: "Accueil"
-description: "Découvrez SLGPlus, le portail d'informations du collège Saint-Louis de Gonzague : actualités, objets perdus, boîte à idées, cantine, CDI et forum."
 icon: "rocket"
 ---
 
-SLGPlus est le portail d'informations du collège Saint-Louis de Gonzague. Il rassemble les actualités de l'établissement, la gestion des objets perdus, la boîte à idées des élèves, les informations de cantine, les disponibilités du CDI et un forum de discussion. Le projet est développé par une équipe d'élèves et utilise une stack technique moderne alliant Python, Go, JavaScript et PHP.
+SLGPlus est le portail d'informations du collège Saint-Louis de Gonzague. Il rassemble les actualités de l'établissement, la gestion des objets perdus, la boîte à idées des élèves, les informations de cantine, les disponibilités du CDI et un forum de discussion. Le projet est développé par une équipe d'élèves et utilise une stack technique moderne alliant Python, Go, JavaScript et PHP. Ci dessous la documentation complète à des fins techniques et de Présentation.
+
+<Danger>
+  AVERTISSEMENT: Les documents présents sur ce site ainsi que le code source de SLGPlus est destiné à être consulté par les techniciens & devs SLGPlus UNIQUEMENT.
+</Danger>
 
 <CardGroup cols={3}>
   <Card title="Démarrer" icon="play" href="/quickstart">
-    Installez le backend en local et faites votre premier appel à l'API.
+    Pour faire fonctionner l'API de manière locale
   </Card>
 
   <Card title="Architecture" icon="server" href="/architecture">
-    Comprenez les 5 dépôts et le flux de données entre les composants.
+    L'architecture globale du site.
   </Card>
 
   <Card title="Documentation" icon="book" href="/composants/frontend">
-    Explorez le frontend, l'API Python, le microservice Go et le forum.
+    Des renseignements complets sur tout SLGPlus !
   </Card>
 
   <Card title="Référence API" icon="code" href="/reference/introduction">
@@ -25,29 +28,29 @@ SLGPlus est le portail d'informations du collège Saint-Louis de Gonzague. Il ra
   </Card>
 
   <Card title="Guides" icon="compass" href="/guides/developpement-local">
-    Apprenez le développement local, la modération et le déploiement.
+    Divers guides a propos du projet;
   </Card>
 
   <Card title="Sécurité" icon="shield" href="/guides/securite">
-    Découvrez les bonnes pratiques et la gestion des sessions.
+    Mesures de sécurité misent en place.
   </Card>
 </CardGroup>
 
 ## Stack technique
 
-Le projet repose sur plusieurs langages et technologies complémentaires :
+Le projet repose sur plusieurs langages et technologies :
 
 <Tabs>
   <Tab title="Backend">
-    - **Python 3.10+** avec Flask et Flask-RESTful pour l'API principale
+    - **Python 3.10** avec Flask et Flask-RESTful pour l'API principale
     - **Go** pour le microservice de connexion ÉcoleDirecte
     - **Waitress** comme serveur WSGI (32 threads)
-    - **MariaDB** pour le stockage relationnel
+    - **MariaDB** pour la base de données
   </Tab>
   <Tab title="Frontend">
     - **HTML, CSS et JavaScript** vanilla, sans framework
     - **Bootstrap 5.3.8** et Bootstrap Icons
-    - **WebAssembly** pour l'exécution de Doom dans le navigateur
+    - **WebAssembly** pour l'exécution de Doom dans le navigateur (easter egg)
   </Tab>
   <Tab title="Forum">
     - **PHP** avec Flarum 1.8
@@ -55,29 +58,4 @@ Le projet repose sur plusieurs langages et technologies complémentaires :
   </Tab>
 </Tabs>
 
-## Démarrage rapide
-
-<Steps>
-  <Step title="Cloner les dépôts">
-    Récupérez le backend et le frontend depuis l'organisation GitHub SLGPlus.
-  </Step>
-  <Step title="Installer les dépendances">
-    Installez Python 3.10, MariaDB, Go et PHP, puis les packages Python requis.
-  </Step>
-  <Step title="Configurer l'API">
-    Copiez `api_config/config_template.yml` vers `api_source/config.yml` et renseignez vos valeurs.
-  </Step>
-  <Step title="Lancer les services">
-    Démarrez l'API Flask avec `python app.py`, le microservice Go avec `go run edlogin.go`, et le serveur web pour le frontend.
-  </Step>
-</Steps>
-
-Pour une procédure détaillée, consultez la page [Quickstart](/quickstart).
-
-## Contact
-
-Une question ou une suggestion ? Contactez l'équipe à l'adresse [**SLGPlus66@gmail.com**](mailto:SLGPlus66@gmail.com) ou consultez l'organisation sur [GitHub](https://github.com/SLGPlus).
-
-<Note>
-  La documentation est maintenue par la communauté. N'hésitez pas à signaler une erreur ou une information manquante.
-</Note>
+La procédure de démarrage rapide se trouve ici [Quickstart](/quickstart).

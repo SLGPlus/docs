@@ -11,12 +11,6 @@ Le fichier `dashboard.py` est une interface web de supervision et de contrôle d
   Le mot de passe par défaut est codé en dur dans `DASH_CONFIG["password"]` : `slgplusdash`. Cette valeur doit être modifiée immédiatement et déplacée dans un fichier de configuration externe non versionné.
 </Warning>
 
-## Configuration DASH_CONFIG
-
-La configuration est définie en Python dans le fichier lui-même :
-
-| Section | Clé | Valeur par défaut | Description | |---|---|---|---|:---| | Global | `port` | 9000 | Port d'écoute | | Global | `password` | `slgplusdash` | Mot de passe de connexion | | Global | `secret_key` | `os.urandom(24).hex()` | Clé de session Flask | | Global | `slgplus_config_path` | `./config.yml` | Chemin vers la config SLGPlus | | DB | `database` | dict avec credentials | Connexion directe ou fallback sur config.yml | | Services | `services` | MariaDB, Apache, Zrok | Services Windows à surveiller | | Processus | `watched_processes` | API SLGPlus Main, edlogin | Processus à surveiller | | Scripts | `scripts` | start/stop .bat | Scripts exécutables d'un clic | | Historique | `history_db` | `dashboard_history.sqlite3` | Base SQLite pour les métriques | | Rafraîchissement | `services_refresh_every` | 5s | Intervalle de vérification services | | Historique | `history_write_every` | 15s | Intervalle d'écriture historique |
-
 ## Architecture à deux niveaux
 
 Le dashboard utilise un **thread de fond** pour collecter les métriques système, et des **routes HTTP rapides** qui ne lisent que l'état mis en cache :
@@ -34,8 +28,6 @@ def background_loop():
             STATE["zrok"] = zrok
         time.sleep(1)
 ```
-
-Ce design garantit des réponses instantanées sur les routes API, même si la collecte système est gourmande.
 
 ## Routes API complètes
 
