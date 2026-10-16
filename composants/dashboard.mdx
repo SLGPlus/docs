@@ -1,0 +1,122 @@
+---
+title: "Dashboard serveur : surveillance et contrôle de SLGPlus"
+description: "dashboard.py est une interface Flask qui surveille le serveur Windows de SLGPlus, contrôle les services, redémarre les processus et affiche les statistiques en temps réel via SSE."
+sidebarTitle: "Dashboard"
+icon: "server"
+---
+
+Le fichier `dashboard.py` est une interface web de supervision et de contrôle du serveur SLGPlus. Écrite en Flask, elle s'adresse aux administrateurs techniques et tourne sur le port 9000.
+
+<Warning>
+  Le mot de passe par défaut est codé en dur dans `DASH_CONFIG["password"]` : `slgplusdash`. Cette valeur doit être modifiée immédiatement et déplacée dans un fichier de configuration externe non versionné.
+</Warning>
+
+## Configuration DASH_CONFIG
+
+La configuration est définie en Python dans le fichier lui-même :
+
+| Section | Clé | Valeur par défaut | Description | |---|---|---|---|:---| | Global | `port` | 9000 | Port d'écoute | | Global | `password` | `slgplusdash` | Mot de passe de connexion | | Global | `secret_key` | `os.urandom(24).hex()` | Clé de session Flask | | Global | `slgplus_config_path` | `./config.yml` | Chemin vers la config SLGPlus | | DB | `database` | dict avec credentials | Connexion directe ou fallback sur config.yml | | Services | `services` | MariaDB, Apache, Zrok | Services Windows à surveiller | | Processus | `watched_processes` | API SLGPlus Main, edlogin | Processus à surveiller | | Scripts | `scripts` | start/stop .bat | Scripts exécutables d'un clic | | Historique | `history_db` | `dashboard_history.sqlite3` | Base SQLite pour les métriques | | Rafraîchissement | `services_refresh_every` | 5s | Intervalle de vérification services | | Historique | `history_write_every` | 15s | Intervalle d'écriture historique |
+
+## Architecture à deux niveaux
+
+Le dashboard utilise un **thread de fond** pour collecter les métriques système, et des **routes HTTP rapides** qui ne lisent que l'état mis en cache :
+
+```python title="Thread de fond"
+def background_loop():
+    while True:
+        cpu = psutil.cpu_percent(interval=None)
+        ram = psutil.virtual_memory()
+        net = psutil.net_io_counters()
+        # ... calculs ...
+        with STATE_LOCK:
+            STATE["live"].append(sample)
+            STATE["services"] = services
+            STATE["zrok"] = zrok
+        time.sleep(1)
+```
+
+Ce design garantit des réponses instantanées sur les routes API, même si la collecte système est gourmande.
+
+## Routes API complètes
+
+### Lecture (GET)
+
+| Route | Description |
+| --- | --- |
+| `GET /api/system` | Dernière snapshot système (CPU, RAM, disques, top process, uptime) |
+| `GET /api/stream` | Server-Sent Events : une mesure par seconde pour les graphiques temps réel |
+| `GET /api/services` | État des services Windows et processus surveillés |
+| `GET /api/zrok` | Accessibilité du tunnel zrok (latence, code HTTP) |
+| `GET /api/analytics` | Statistiques SLGPlus (comptes, articles, objets perdus, idées, sessions actives) |
+| `GET /api/ideas` | Liste des idées proposées par les élèves |
+| `GET /api/history` | Historique SQLite des 3 derniers jours |
+| `GET /api/maintenance` | État du mode maintenance (lu depuis config.yml) |
+| `GET /api/scripts` | Liste des scripts configurés |
+| `GET /api/todos` | Liste des tâches à faire |
+
+### Contrôle (POST)
+
+| Route | Description |
+| --- | --- |
+| `POST /login` | Authentification (session Flask) |
+| `POST /logout` | Déconnexion |
+| `POST /api/services/<name>/<action>` | Démarrer, arrêter ou redémarrer un service Windows |
+| `POST /api/process/<label>/terminate` | Terminer un processus surveillé |
+| `POST /api/process/<label>/restart` | Redémarrer un processus surveillé |
+| `POST /api/process/kill/<pid>` | Terminer n'importe quel processus par PID |
+| `POST /api/api/restart` | Redémarrer l'API SLGPlus Main |
+| `POST /api/scripts/<label>/run` | Exécuter un script .bat |
+| `POST /api/maintenance` | Activer/désactiver le mode maintenance (modifie config.yml) |
+| `POST /api/todos` | Ajouter une tâche |
+| `POST /api/todos/<id>/toggle` | Marquer une tâche comme faite/non faite |
+| `POST /api/todos/<id>/delete` | Supprimer une tâche |
+| `POST /api/sessions/kill` | Forcer la déconnexion d'une session SLGPlus par token |
+| `POST /api/power/reboot` | Redémarrer le serveur (8s de délai) |
+| `POST /api/power/shutdown` | Éteindre le serveur (8s de délai) |
+| `POST /api/power/cancel` | Annuler un redémarrage/extinction en cours |
+
+<Info>
+  Les actions `reboot` et `shutdown` utilisent la commande Windows `shutdown` avec un délai de 8 secondes. Un bouton "Annuler" permet d'interrompre l'action pendant ce délai.
+</Info>
+
+## Services Windows surveillés
+
+| Label | Nom du service |
+| --- | --- |
+| MariaDB | `wampmariadb64` |
+| Apache (WAMP) | `wampapache64` |
+| Zrok (NSSM) | `ZrokAgent` |
+
+## Processus surveillés
+
+| Label | Mot-clé de détection |
+| --- | --- |
+| API SLGPlus Main | `SLGPLUS API - python app.py` |
+| Service Login Ecoledirecte | `edlogin.exe` |
+
+La fonction `_restart_watched_process` tente de détecter automatiquement la ligne de commande et le dossier de travail de l'API Python si aucun `restart_cmd` n'est configuré.
+
+## Historique long terme
+
+Les métriques sont stockées dans une base SQLite embarquée (`dashboard_history.sqlite3`) avec une rétention de 3 jours :
+
+```sql title="Table metrics"
+CREATE TABLE metrics (
+    ts INTEGER, cpu REAL, ram REAL, disk REAL,
+    net_sent REAL, net_recv REAL, sessions INTEGER
+);
+```
+
+Un graphique Chart.js affiche l'historique CPU et RAM sur la page principale du dashboard.
+
+## Authentification
+
+Le dashboard utilise des sessions Flask. Toute route sauf `/login` et les fichiers statiques exige une session valide. Les routes `/api/*` retournent `401 {"message": "unauthorized"}` si l'utilisateur n'est pas connecté.
+
+## Démarrage
+
+```bash
+python dashboard.py
+```
+
+Le serveur démarre sur `http://0.0.0.0:9000`. En production, le dashboard est accessible directement sur le serveur Windows ou via un tunnel sécurisé.

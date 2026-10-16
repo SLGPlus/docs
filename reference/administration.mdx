@@ -1,0 +1,362 @@
+---
+title: "Référence API : administration du portail"
+sidebarTitle: "Administration"
+description: "Endpoints réservés à l'administrateur SLGPlus : gestion des codes PIN, liste des articles en attente de validation et modération des publications."
+icon: "shield-halved"
+---
+
+Ces endpoints sont strictement réservés au rôle `admin`. Ils permettent de configurer les accès du portail, de valider ou rejeter les articles soumis par les utilisateurs, et de superviser le contenu en attente.
+
+---
+
+## POST /admin/setpin
+
+Change le code PIN d'un rôle utilisateur. Nécessite d'être connecté en tant qu'`admin`.
+
+### Authentification
+
+Token de session requis. Rôle `admin` obligatoire.
+
+### Paramètres
+
+<ParamField body="token" type="string" required>
+  Token de session valide.
+</ParamField>
+
+<ParamField body="pin" type="string" required>
+  Nouveau code PIN en clair. Il sera haché automatiquement côté serveur.
+</ParamField>
+
+<ParamField body="user" type="string" required>
+  Rôle dont le PIN doit être modifié : `profs`, `eleves`, `admin`, `bvs`.
+</ParamField>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/admin/setpin" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "pin": "98765",
+    "user": "eleves",
+    "IP": "10.0.0.2"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/admin/setpin"
+payload = {
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "pin": "98765",
+    "user": "eleves",
+    "IP": "10.0.0.2"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/admin/setpin", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    token: "a1b2c3d4e5f6789012345678abcdef01",
+    pin: "98765",
+    user: "eleves",
+    IP: "10.0.0.2"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200)
+
+```json
+{
+  "message": "success"
+}
+```
+
+### Réponses d'erreur
+
+<CodeGroup>
+
+```json 401 - session invalide
+{ "message": "error" }
+```
+
+```json 403 - rôle non admin
+{ "message": "error" }
+```
+
+```json 500 - erreur base de données
+{ "message": "error" }
+```
+
+</CodeGroup>
+
+---
+
+## POST /admin/waitnews
+
+Retourne la liste des articles en attente de validation (champ `approved=0`).
+
+### Authentification
+
+Token de session requis. Rôle `admin` obligatoire.
+
+### Paramètres
+
+<ParamField body="token" type="string" required>
+  Token de session valide.
+</ParamField>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/admin/waitnews" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "IP": "10.0.0.2"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/admin/waitnews"
+payload = {
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "IP": "10.0.0.2"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/admin/waitnews", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    token: "a1b2c3d4e5f6789012345678abcdef01",
+    IP: "10.0.0.2"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200)
+
+<ResponseField name="message" type="string">
+  `success`
+</ResponseField>
+
+<ResponseField name="articles" type="object">
+  Objet dont les clés sont des index numériques. Chaque valeur est un article identique au format `GET /news`.
+</ResponseField>
+
+```json
+{
+  "message": "success",
+  "articles": {
+    "1": {
+      "id": "xY9zAb",
+      "by": "M. Lemoine",
+      "title": "Club photo",
+      "content": "Lancement du club photo ce vendredi !",
+      "image": ""
+    }
+  }
+}
+```
+
+### Réponses d'erreur
+
+<CodeGroup>
+
+```json 401 - session invalide
+{ "message": "unauthorized" }
+```
+
+```json 403 - rôle non admin
+{ "message": "unauthorized" }
+```
+
+</CodeGroup>
+
+---
+
+## POST /admin/articles
+
+Approuve, supprime ou modifie un article en attente de validation.
+
+### Authentification
+
+Token de session requis. Rôle `admin` obligatoire.
+
+### Paramètres
+
+<ParamField body="token" type="string" required>
+  Token de session valide.
+</ParamField>
+
+<ParamField body="ata" type="string" required>
+  Identifiant de l'article (`article_uid`).
+</ParamField>
+
+<ParamField body="mode" type="string" required>
+  Action à effectuer : `0` (approuver), `1` (supprimer), `2` (modifier et approuver).
+</ParamField>
+
+<ParamField body="modified" type="object">
+  Article modifié, utilisé uniquement si `mode=2`.
+</ParamField>
+
+<Expandable title="Champs de modified">
+  <ParamField body="title" type="string">
+    Nouveau titre.
+  </ParamField>
+
+  <ParamField body="content" type="string">
+    Nouveau contenu.
+  </ParamField>
+
+  <ParamField body="image" type="string">
+    Nouvelle URL d'image.
+  </ParamField>
+
+  <ParamField body="by" type="string">
+    Nouvel auteur.
+  </ParamField>
+</Expandable>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client.
+</ParamField>
+
+### Exemples de requête
+
+#### Approuver un article
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/admin/articles" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "ata": "xY9zAb",
+    "mode": "0",
+    "IP": "10.0.0.2"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/admin/articles"
+payload = {
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "ata": "xY9zAb",
+    "mode": "0",
+    "IP": "10.0.0.2"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/admin/articles", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    token: "a1b2c3d4e5f6789012345678abcdef01",
+    ata: "xY9zAb",
+    mode: "0",
+    IP: "10.0.0.2"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+#### Modifier et approuver un article
+
+```bash
+curl -X POST "https://api-slgplus.shares.zrok.io/admin/articles" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "ata": "xY9zAb",
+    "mode": "2",
+    "modified": {
+      "title": "Club photo (maj)",
+      "content": "Le club photo est maintenant ouvert tous les vendredis de 16h à 17h30.",
+      "image": "https://example.com/photo.jpg",
+      "by": "M. Lemoine"
+    },
+    "IP": "10.0.0.2"
+  }'
+```
+
+### Réponse de succès (200)
+
+```json
+{
+  "message": "success"
+}
+```
+
+### Réponses d'erreur
+
+<CodeGroup>
+
+```json 401 - session invalide
+{ "message": "unauthorized" }
+```
+
+```json 401 - rôle non admin
+{ "message": "unauthorized" }
+```
+
+</CodeGroup>

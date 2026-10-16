@@ -1,0 +1,211 @@
+---
+title: "API actualités SLGPlus : consulter, rédiger et modérer"
+sidebarTitle: "Actualités"
+description: "Endpoints de l'API SLGPlus pour lister les articles, en soumettre un nouveau ou en supprimer un. Gestion du statut approuve ou en attente."
+icon: "newspaper"
+---
+
+Ce groupe de routes gère le flux de publication du portail. Tout le monde peut consulter les articles approuvés. Seuls les utilisateurs disposant d'un jeton peuvent en soumettre un. Les articles crees par le role `admin` sont approuvés automatiquement. Les autres passent en file d'attente jusqu'a validation manuelle.
+
+## GET `/news`
+
+Renvoie l'ensemble des articles dont `approved` vaut `1`, tries du plus recent au plus ancien.
+
+<ParamField body="none" type="none">
+  Cette route ne recoit pas de corps. Le frontend peut toutefois envoyer une cle `IP`.
+</ParamField>
+
+### Reponse 200
+
+La reponse est un objet dont les cles sont des numeros d'ordre (`1`, `2`, etc.), chaque valeur etant un article.
+
+<ResponseField name="message" type="object">
+  <Expandable title="Structure par article">
+    <ResponseField name="id" type="string">
+      Identifiant public genere (6 caracteres alphanumeriques)
+    </ResponseField>
+
+    <ResponseField name="by" type="string">
+      Auteur
+    </ResponseField>
+
+    <ResponseField name="title" type="string">
+      Titre
+    </ResponseField>
+
+    <ResponseField name="content" type="string">
+      Contenu
+    </ResponseField>
+
+    <ResponseField name="image" type="string">
+      URL de l'image
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```json
+{
+  "message": {
+    "1": {
+      "id": "aB3dEf",
+      "by": "M. Dupont",
+      "title": "Journée portes ouvertes",
+      "content": "Le samedi 15 mars de 9h a 17h.",
+      "image": "https://example.com/affiche.jpg"
+    }
+  }
+}
+```
+
+---
+
+## POST `/news`
+
+Cree un nouvel article ou supprime un article existant. Le corps doit contenir un jeton valide.
+
+### Mode creation
+
+<ParamField body="token" type="string" required>
+  Jeton de session valide
+</ParamField>
+
+<ParamField body="title" type="string" required>
+  Titre de l'article
+</ParamField>
+
+<ParamField body="content" type="string" required>
+  Texte complet
+</ParamField>
+
+<ParamField body="image" type="string">
+  URL d'une image illustrative
+</ParamField>
+
+<ParamField body="by" type="string">
+  Nom d'auteur ("Auteur inconnu" par defaut)
+</ParamField>
+
+### Mode suppression (admin uniquement)
+
+<ParamField body="mode" type="string">
+  `"DEL"` pour supprimer
+</ParamField>
+
+<ParamField body="id" type="string">
+  Identifiant de l'article a supprimer
+</ParamField>
+
+### Reponses
+
+**200** Creation reussie
+
+```json
+{
+  "message": "success",
+  "id": "xYz9wQ"
+}
+```
+
+**200** Suppression effectuee (role `admin` uniquement)
+
+```json
+{
+  "message": "succes"
+}
+```
+
+**401** Jeton invalide ou absent
+
+```json
+{
+  "message": "unauthorized"
+}
+```
+
+**403** Tentative de suppression sans role `admin`
+
+```json
+{
+  "message": "unauthorized"
+}
+```
+
+<Note>
+  Le champ `approved` est positionne a `1` si l'auteur est `admin`, sinon `0`. Les articles en attente sont lisibles via `/admin/waitnews`.
+</Note>
+
+---
+
+## POST `/checkarticle`
+
+Verifie le statut de publication d'un article a partir de son identifiant public.
+
+<ParamField body="id" type="string" required>
+  Identifiant de l'article (`article_uid`)
+</ParamField>
+
+### Reponses
+
+**200** Article trouve
+
+```json
+{
+  "message": "success",
+  "status": "approved"
+}
+```
+
+```json
+{
+  "message": "success",
+  "status": "unapproved"
+}
+```
+
+**200** Article introuvable
+
+```json
+{
+  "message": "error",
+  "status": "notfound"
+}
+```
+
+---
+
+## Exemples d'appels
+
+<CodeGroup>
+
+```bash title="Lister les articles"
+curl -X GET "https://api-slgplus.shares.zrok.io/news" \
+  -H "skip_zrok_interstitial: 1"
+```
+
+```bash title="Soumettre un article"
+curl -X POST "https://api-slgplus.shares.zrok.io/news" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "VOTRE_JETON",
+    "title": "Nouvelle regle de vie scolaire",
+    "content": "Les couloirs du 2e etage sont interdits aux recreations.",
+    "by": "Mme Martin",
+    "image": "",
+    "IP": "192.168.1.1"
+  }'
+```
+
+```bash title="Supprimer un article (admin)"
+curl -X POST "https://api-slgplus.shares.zrok.io/news" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "VOTRE_JETON",
+    "mode": "DEL",
+    "id": "xYz9wQ",
+    "IP": "192.168.1.1"
+  }'
+```
+
+</CodeGroup>

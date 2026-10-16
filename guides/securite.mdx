@@ -1,0 +1,85 @@
+---
+title: "Sécurité et confidentialité dans SLGPlus"
+sidebarTitle: "Sécurité"
+description: "Découvrir les pratiques de sécurité de SLGPlus : gestion des secrets, politique CORS, authentification par PIN hashé, et recommandations pour protéger les clés API et config.yml."
+icon: "lock"
+---
+
+SLGPlus manipule des données d'élèves et des accès à des services tiers. Cette page expose les mécanismes déjà en place, les risques connus et les bonnes pratiques que vous devez appliquer pour maintenir la sécurité du système.
+
+## Authentification sans compte nominatif
+
+Au lieu d'un système de nom d'utilisateur et mot de passe personnels, SLGPlus repose sur des rôles partagés (élèves, bvs, admin, profs). Chaque rôle est protégé par un PIN stocké sous forme de hash dans `users_accounts.pin_hash`. Lors de la connexion, la méthode `check_password_hash` de Werkzeug compare le PIN saisi avec le hash.
+
+```python
+check_password_hash(account["pin_hash"], pin)
+```
+
+Aucun mot de passe ou PIN n'est jamais stocké en clair. Seul le hash est conservé. L'administrateur peut changer un PIN via `/admin/setpin` sans connaître l'ancien.
+
+## Gestion des secrets
+
+Plusieurs éléments sensibles sont présents dans le code source. Le tableau suivant les recense et propose des mesures correctives :
+
+| Secret | Emplacement | Risque | Recommandation |
+| --- | --- | --- | --- |
+| Clés Gemini | `config.yml` → `apikeys.gemini_keys` | Fuite = quota vidé ou abus de l'API | Stockez-les hors du dépôt et faites-les tourner régulièrement. |
+| Clé Flarum maître | `config.yml` → `apikeys.flarum_master` | Fuite = contrôle total du forum | Identique. Limitez les permissions de la clé si possible. |
+| Clé Cerebras | `BadWordsListener.php` (dur) | Fuite = coûts ou abus API | Extrayez-la dans une variable d'environnement PHP. |
+| PIN testeur | `config.yml` → `security.testers_pin` | Fuite = accès non autorisé à la page test | Changez-le fréquemment et limitez le nombre de testeurs. |
+| Mot de passe dashboard | `dashboard.py` → `DASH_CONFIG["password"]` | Fuite = contrôle du serveur | Utilisez un mot de passe fort et autorisez uniquement l'accès local. |
+| Identifiants DB | `config.yml` et `dashboard.py` | Fuite = accès complet aux données | Créez un utilisateur DB dédié avec des droits restreints. |
+
+<Warning>
+  **Ne publiez jamais votre `config.yml`**. Ce fichier contient toutes les clés API, les mots de passe de base de données et les PINs. Ajoutez-le à votre `.gitignore` et envisagez de le rendre lisible uniquement par l'utilisateur système qui fait tourner l'API (`chmod 600 config.yml` sous Linux).
+</Warning>
+
+## CORS et contrôle des origines
+
+L'API Python active CORS de manière permissive dans `app.py` :
+
+```python
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+```
+
+<Info>
+  Cette configuration est pratique lors du développement car elle autorise n'importe quel site à appeler l'API. En production, il est recommandé de restreindre les origines autorisées à vos domaines connus.
+</Info>
+
+Le middleware PHP du forum, lui, est plus restrictif. Le fichier `extend/CorsMiddleware.php` autorise explicitement trois origines :
+
+```php
+protected array $allowedOrigins = [
+    'https://forum-slgplus.great-site.net',
+    'https://slgplus.shares.zrok.io',
+    'https://api-slgplus.shares.zrok.io',
+];
+```
+
+Les en-têtes autorisés incluent le `skip_zrok_interstitial` nécessaire pour contourner la page de confirmation zrok.
+
+## Les règles de base à appliquer
+
+- **Rotation des clés API** : changez vos clés Gemini et Flarum au moins une fois par trimestre, ou immédiatement si vous suspectez une fuite.
+- **Filtrage des origines CORS** : en production, remplacez `origins: "*"` par une liste explicite dans `app.py`.
+- **Accès au dashboard** : le dashboard écoute sur `0.0.0.0:9000` mais ne doit être accessible que depuis le réseau local du serveur. Ne l'ouvrez pas sur Internet sans reverse proxy et authentification renforcée.
+- **Mises à jour des dépendances** : Flarum, Flask et les extensions PHP reçoivent régulièrement des correctifs de sécurité. Planifiez une revue mensuelle via `composer update` et `pip list --outdated`.
+
+## Signaler une vulnérabilité
+
+Le fichier `SECURITY.md` indique la marche à suivre :
+
+| Version | Supportée |
+| --- | --- |
+| 2.0.2 | Blanc |
+| \< 2.0.2 | Croix rouge |
+
+Pour signaler une faille, contactez **FrenchPythonLover** ou **Tilto66** sur GitHub. N'ouvrez pas d'issue publique si la faille pourrait être exploitée.
+
+<Tip>
+  Si vous êtes administrateur du serveur, gardez une trace de chaque rotation de clé dans un document interne. Cela facilitera l'investigation si vous suspectez une compromission.
+</Tip>
+
+## Coté forum : un double garde-fou
+
+La sécurité du forum ne repose pas uniquement sur les tokens. Deux couches de modération automatique (Gemini côté API, Cerebras et liste de mots côté Flarum) limitent la propagation de contenus problématiques. Cependant, ces systèmes ne remplacent pas la vigilance humaine : une revue régulière des logs est indispensable.

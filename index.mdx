@@ -1,20 +1,83 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "SLGPlus : portail d'informations du collège Saint-Louis de Gonzague"
+sidebarTitle: "Accueil"
+description: "Découvrez SLGPlus, le portail d'informations du collège Saint-Louis de Gonzague : actualités, objets perdus, boîte à idées, cantine, CDI et forum."
+icon: "rocket"
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+SLGPlus est le portail d'informations du collège Saint-Louis de Gonzague. Il rassemble les actualités de l'établissement, la gestion des objets perdus, la boîte à idées des élèves, les informations de cantine, les disponibilités du CDI et un forum de discussion. Le projet est développé par une équipe d'élèves et utilise une stack technique moderne alliant Python, Go, JavaScript et PHP.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={3}>
+  <Card title="Démarrer" icon="play" href="/quickstart">
+    Installez le backend en local et faites votre premier appel à l'API.
+  </Card>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+  <Card title="Architecture" icon="server" href="/architecture">
+    Comprenez les 5 dépôts et le flux de données entre les composants.
+  </Card>
+
+  <Card title="Documentation" icon="book" href="/composants/frontend">
+    Explorez le frontend, l'API Python, le microservice Go et le forum.
+  </Card>
+
+  <Card title="Référence API" icon="code" href="/reference/introduction">
+    Consultez les endpoints, les paramètres et les réponses JSON.
+  </Card>
+
+  <Card title="Guides" icon="compass" href="/guides/developpement-local">
+    Apprenez le développement local, la modération et le déploiement.
+  </Card>
+
+  <Card title="Sécurité" icon="shield" href="/guides/securite">
+    Découvrez les bonnes pratiques et la gestion des sessions.
+  </Card>
+</CardGroup>
+
+## Stack technique
+
+Le projet repose sur plusieurs langages et technologies complémentaires :
+
+<Tabs>
+  <Tab title="Backend">
+    - **Python 3.10+** avec Flask et Flask-RESTful pour l'API principale
+    - **Go** pour le microservice de connexion ÉcoleDirecte
+    - **Waitress** comme serveur WSGI (32 threads)
+    - **MariaDB** pour le stockage relationnel
+  </Tab>
+  <Tab title="Frontend">
+    - **HTML, CSS et JavaScript** vanilla, sans framework
+    - **Bootstrap 5.3.8** et Bootstrap Icons
+    - **WebAssembly** pour l'exécution de Doom dans le navigateur
+  </Tab>
+  <Tab title="Forum">
+    - **PHP** avec Flarum 1.8
+    - **Composer** pour la gestion des extensions
+  </Tab>
+</Tabs>
+
+## Démarrage rapide
+
+<Steps>
+  <Step title="Cloner les dépôts">
+    Récupérez le backend et le frontend depuis l'organisation GitHub SLGPlus.
+  </Step>
+  <Step title="Installer les dépendances">
+    Installez Python 3.10, MariaDB, Go et PHP, puis les packages Python requis.
+  </Step>
+  <Step title="Configurer l'API">
+    Copiez `api_config/config_template.yml` vers `api_source/config.yml` et renseignez vos valeurs.
+  </Step>
+  <Step title="Lancer les services">
+    Démarrez l'API Flask avec `python app.py`, le microservice Go avec `go run edlogin.go`, et le serveur web pour le frontend.
+  </Step>
+</Steps>
+
+Pour une procédure détaillée, consultez la page [Quickstart](/quickstart).
+
+## Contact
+
+Une question ou une suggestion ? Contactez l'équipe à l'adresse [**SLGPlus66@gmail.com**](mailto:SLGPlus66@gmail.com) ou consultez l'organisation sur [GitHub](https://github.com/SLGPlus).
+
+<Note>
+  La documentation est maintenue par la communauté. N'hésitez pas à signaler une erreur ou une information manquante.
+</Note>

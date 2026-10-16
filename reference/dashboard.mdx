@@ -1,0 +1,345 @@
+---
+title: "Dashboard serveur SLGPlus"
+sidebarTitle: "Dashboard"
+description: "Référence complète des routes du dashboard serveur : lecture système, contrôle des services, maintenance et gestion des sessions."
+icon: "gauge-high"
+---
+
+Le dashboard est une application Flask indépendante qui surveille le serveur SLGPlus en temps réel. Il expose des routes de lecture (métriques système, analytics SLGPlus) et des routes de contrôle (services, processus, maintenance, alimentation).
+
+<Warning>
+  Le mot de passe du dashboard est défini dans `DASH_CONFIG["password"]` en dur dans `dashboard.py`. Adapte ce fichier avant toute mise en production et ne le commite jamais.
+</Warning>
+
+<Note>
+  Le dashboard utilise une base SQLite embarquée (`dashboard_history.sqlite3`) pour l'historique long terme et les todos. Il se connecte à MariaDB via les identifiants de `config.yml` ou de `DASH_CONFIG["database"]`.
+</Note>
+
+---
+
+## Authentification
+
+Toutes les routes sauf `/login` et `/login.html` nécessitent une session cookie obtenue via `POST /login`.
+
+### POST /login
+
+<ParamField body="password" type="string" required>
+  Mot de passe configuré dans `DASH_CONFIG["password"]`.
+</ParamField>
+
+#### Exemple
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST http://localhost:9000/login \
+  -H "Content-Type: application/json" \
+  -d '{"password":"slgplusdash"}' \
+  -c cookies.txt
+```
+
+```python Python
+import requests
+
+s = requests.Session()
+s.post("http://localhost:9000/login", json={"password": "slgplusdash"})
+print(s.get("http://localhost:9000/api/system").json())
+```
+
+```javascript JavaScript
+await fetch('http://localhost:9000/login', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({password: 'slgplusdash'}),
+  credentials: 'include'
+});
+```
+
+</CodeGroup>
+
+#### Réponses
+
+| Statut | Corps | Signification |
+| --- | --- | --- |
+| 200 | `{"message":"success"}` | Connexion réussie |
+| 401 | `{"message":"wrong_password"}` | Mot de passe incorrect |
+
+### POST /logout
+
+Détruit la session côté serveur.
+
+---
+
+## Lecture système
+
+### GET /api/system
+
+Snapshot complète du système : CPU, RAM, disques, uptime, top process.
+
+#### Réponse (exemple tronqué)
+
+```json
+{
+  "hostname": "SRV-SLGPLUS",
+  "os": "Windows 10 22H2",
+  "cpu_percent": 12.5,
+  "ram_percent": 45.2,
+  "ram_used_gb": 7.2,
+  "ram_total_gb": 16.0,
+  "disk_percent": 67,
+  "disks": [
+    {"mount": "C:\\", "total_gb": 500.0, "used_gb": 335.0, "percent": 67}
+  ],
+  "uptime": "3:42:15",
+  "top_processes": [
+    {"pid": 1234, "name": "python.exe", "cpu": 5.2, "ram": 2.1}
+  ],
+  "ts": 1735689600.0,
+  "net_sent_kbps": 12.3,
+  "net_recv_kbps": 45.6,
+  "active_sessions": 7
+}
+```
+
+### GET /api/stream
+
+Server-Sent Events (SSE) qui pousse une mesure par seconde : CPU, RAM, réseau, sessions actives.
+
+```javascript
+const es = new EventSource('/api/stream');
+es.onmessage = (e) => {
+  const sample = JSON.parse(e.data);
+  console.log(sample.cpu, sample.ram);
+};
+```
+
+### GET /api/services
+
+État des services Windows et des processus surveillés.
+
+#### Réponse
+
+```json
+[
+  {"label": "MariaDB", "type": "service", "name": "wampmariadb64", "status": "RUNNING"},
+  {"label": "API SLGPlus Main", "type": "process", "name": "API SLGPlus Main", "status": "RUNNING", "pid": 8420, "restartable": false}
+]
+```
+
+### GET /api/zrok
+
+Accessibilité du tunnel zrok public.
+
+```json
+{
+  "configured": true,
+  "url": "https://slgplus.shares.zrok.io",
+  "reachable": true,
+  "status_code": 200,
+  "latency_ms": 142
+}
+```
+
+### GET /api/history
+
+Historique long terme (3 jours) : CPU, RAM, disque, réseau, sessions.
+
+```json
+[
+  {"ts": 1735689600, "cpu": 12.5, "ram": 45.2, "disk": 67, "net_sent": 12.3, "net_recv": 45.6, "sessions": 7}
+]
+```
+
+---
+
+## Analytics SLGPlus
+
+### GET /api/analytics
+
+Agrégations issues de la base MariaDB SLGPlus.
+
+#### Réponse
+
+```json
+{
+  "available": true,
+  "accounts_by_role": {"eleves": 1, "admin": 1, "bvs": 1},
+  "articles": {"approved": 12, "pending": 2},
+  "lost_and_found": 5,
+  "ideas": 8,
+  "distinct_active_users": 7
+}
+```
+
+### GET /api/ideas
+
+Liste brute des idées déposées par les élèves.
+
+#### Réponse
+
+```json
+{
+  "available": true,
+  "items": [
+    {"adresse_ip": "192.168.1.42", "titre": "Plus de croissants", "contenu": "...", "auteur": "Jean"}
+  ],
+  "columns": ["adresse_ip", "titre", "contenu", "auteur"]
+}
+```
+
+---
+
+## Contrôle des services
+
+### POST /api/services/{name}/{action}
+
+Contrôle un service Windows (`start`, `stop`, `restart`).
+
+<ParamField path="name" type="string" required>
+  Nom affiché du service (ex: `MariaDB`, `Apache (WAMP)`, `Zrok (NSSM)`).
+</ParamField>
+
+<ParamField path="action" type="string" required>
+  Action : `start`, `stop` ou `restart`.
+</ParamField>
+
+### POST /api/process/{label}/terminate
+
+Termine un processus surveillé sans le relancer.
+
+### POST /api/process/{label}/restart
+
+Redémarre un processus surveillé (tue puis relance).
+
+### POST /api/process/kill/{pid}
+
+Termine n'importe quel processus par son PID (y compris ceux hors liste surveillée).
+
+<Warning>
+  Les PID `0` et `4` (processus système) sont protégés. Le dashboard lui-même ne peut pas se terminer.
+</Warning>
+
+### POST /api/api/restart
+
+Redémarrage dédié de l'API SLGPlus Main.
+
+---
+
+## Scripts et maintenance
+
+### GET /api/scripts
+
+Liste les scripts `.bat` configurés dans `DASH_CONFIG["scripts"]`.
+
+### POST /api/scripts/{label}/run
+
+Exécute un script configuré.
+
+### GET /api/maintenance
+
+Lit l'état de maintenance depuis `config.yml`.
+
+```json
+{"maintenance_mode": false, "reason": ""}
+```
+
+### POST /api/maintenance
+
+Active ou désactive le mode maintenance en modifiant `config.yml`.
+
+<ParamField body="enabled" type="boolean" required>
+  `true` pour activer, `false` pour désactiver.
+</ParamField>
+
+<ParamField body="reason" type="string">
+  Raison affichée aux utilisateurs.
+</ParamField>
+
+<Info>
+  L'API SLGPlus lit `config.yml` une seule fois au démarrage. Redémarre le processus API après un changement pour qu'il soit pris en compte.
+</Info>
+
+---
+
+## Gestion des sessions et todos
+
+### POST /api/sessions/kill
+
+Force la déconnexion d'une session utilisateur.
+
+<ParamField body="token" type="string" required>
+  Token de session à invalider.
+</ParamField>
+
+### GET /api/todos
+
+Liste des tâches du dashboard.
+
+### POST /api/todos
+
+Crée une tâche.
+
+<ParamField body="text" type="string" required>
+  Contenu de la tâche.
+</ParamField>
+
+### POST /api/todos/{id}/toggle
+
+Marque une tâche comme faite ou à faire.
+
+### POST /api/todos/{id}/delete
+
+Supprime une tâche.
+
+---
+
+## Alimentation serveur
+
+<Warning>
+  Ces actions sont destructives. Un délai de 8 secondes est prévu, annulable via `/api/power/cancel`.
+</Warning>
+
+### POST /api/power/reboot
+
+Lance le redémarrage du serveur Windows.
+
+### POST /api/power/shutdown
+
+Lance l'extinction du serveur Windows.
+
+### POST /api/power/cancel
+
+Annule une action de redémarrage ou d'extinction en cours.
+
+---
+
+## Récapitulatif des routes
+
+| Méthode | Route | Description |
+| --- | --- | --- |
+| POST | `/login` | Authentification au dashboard |
+| POST | `/logout` | Déconnexion |
+| GET | `/api/system` | Métriques système complètes |
+| GET | `/api/stream` | Flux SSE temps réel |
+| GET | `/api/services` | État des services et processus |
+| GET | `/api/zrok` | Accessibilité du tunnel zrok |
+| GET | `/api/analytics` | Données agrégées SLGPlus |
+| GET | `/api/ideas` | Idées des élèves |
+| GET | `/api/history` | Historique long terme (3 jours) |
+| GET | `/api/maintenance` | État de maintenance |
+| POST | `/api/maintenance` | Active/désactive la maintenance |
+| POST | `/api/services/{name}/{action}` | Contrôle service Windows |
+| POST | `/api/process/{label}/terminate` | Termine un processus |
+| POST | `/api/process/{label}/restart` | Redémarre un processus |
+| POST | `/api/process/kill/{pid}` | Tue un processus par PID |
+| POST | `/api/api/restart` | Redémarre l'API SLGPlus |
+| GET | `/api/scripts` | Liste les scripts |
+| POST | `/api/scripts/{label}/run` | Exécute un script |
+| POST | `/api/sessions/kill` | Déconnecte une session |
+| GET | `/api/todos` | Liste les tâches |
+| POST | `/api/todos` | Ajoute une tâche |
+| POST | `/api/todos/{id}/toggle` | Bascule une tâche |
+| POST | `/api/todos/{id}/delete` | Supprime une tâche |
+| POST | `/api/power/reboot` | Redémarre le serveur |
+| POST | `/api/power/shutdown` | Éteint le serveur |
+| POST | `/api/power/cancel` | Annule reboot/shutdown |

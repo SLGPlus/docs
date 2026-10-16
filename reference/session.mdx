@@ -1,0 +1,483 @@
+---
+title: "Session : ping, connexion, vérification et déconnexion"
+sidebarTitle: "Session"
+description: "Référence complète des endpoints de session SLGPlus : ping de l'API, authentification par code PIN, vérification de token et fermeture de session."
+icon: "key"
+---
+
+Cette page documente les cinq endpoints qui gèrent l'état de session d'un utilisateur ou d'un client SLGPlus. Ils constituent le cycle de vie complet : vérifier que l'API est joignable, récupérer un token, valider un token et se déconnecter proprement.
+
+---
+
+## GET /
+
+Renvoie un ping de santé avec la version de l'API et l'état de maintenance du serveur.
+
+### Authentification
+
+Aucune.
+
+### Paramètres
+
+Aucun paramètre requis.
+
+<ParamField body="IP" type="string" required>
+  Le frontend envoie toujours ce champ, mais l'endpoint `GET /` ne le lit pas explicitement.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X GET "https://api-slgplus.shares.zrok.io/" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1"
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/"
+headers = {"skip_zrok_interstitial": "1"}
+
+r = requests.get(url, headers=headers)
+print(r.status_code, r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/", {
+  headers: { "skip_zrok_interstitial": "1" }
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200)
+
+<ResponseField name="message" type="string">
+  `pong`
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Numéro de version de l'API, par exemple `v2.0.2-SQL`
+</ResponseField>
+
+<ResponseField name="status" type="object">
+  Objet contenant `maintenance` (`true`/`false`) et éventuellement `reason`
+</ResponseField>
+
+```json
+{
+  "message": "pong",
+  "version": "v2.0.2-SQL",
+  "status": {
+    "maintenance": false
+  }
+}
+```
+
+### Réponse d'erreur (200 en attendant la maintenance si activée)
+
+```json
+{
+  "message": "pong",
+  "version": "v2.0.2-SQL",
+  "status": {
+    "maintenance": true,
+    "reason": "Mise à jour en cours"
+  }
+}
+```
+
+---
+
+## POST /login
+
+Authentifie un utilisateur à l'aide de son code PIN et crée une session active en base de données.
+
+### Authentification
+
+Aucune en entrée. Le PIN fait office d'authentification.
+
+### Paramètres
+
+<ParamField body="pin" type="string" required>
+  Code PIN de l'utilisateur (haché avec `werkzeug.security.generate_password_hash`).
+</ParamField>
+
+<ParamField body="user" type="string">
+  Rôle à authentifier. Valeurs possibles : `profs`, `eleves`, `admin`, `bvs`. Par défaut : `profs`.
+</ParamField>
+
+<ParamField body="token" type="string">
+  Ne doit **pas** être fourni. Si ce champ est présent, le serveur répond `tokenerror`.
+</ParamField>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client, utilisée pour l'enregistrement de la session.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/login" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "pin": "12348",
+    "user": "profs",
+    "IP": "10.0.0.2"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/login"
+payload = {
+    "pin": "12348",
+    "user": "profs",
+    "IP": "10.0.0.2"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.status_code, r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/login", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    pin: "12348",
+    user: "profs",
+    IP: "10.0.0.2"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200)
+
+<ResponseField name="message" type="string">
+  `success`
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  Token de session UUID (hexadécimal)
+</ResponseField>
+
+```json
+{
+  "message": "success",
+  "token": "a1b2c3d4e5f6789012345678abcdef01"
+}
+```
+
+### Réponses d'erreur
+
+<CodeGroup>
+
+```json 401 - wrong_pin
+{
+  "message": "wrong_pin"
+}
+```
+
+```json 401 - tokenerror
+{
+  "message": "tokenerror"
+}
+```
+
+</CodeGroup>
+
+---
+
+## POST /checkeleves
+
+Vérifie le PIN des élèves. Si le PIN correspond à `TESTERSPIN`, l'utilisateur est redirigé vers une page de test spéciale. Sinon, une session `eleves` est créée si le PIN est valide.
+
+### Authentification
+
+Aucune.
+
+### Paramètres
+
+<ParamField body="pin" type="string" required>
+  Code PIN de l'élève.
+</ParamField>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/checkeleves" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "pin": "56789",
+    "IP": "10.0.0.3"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/checkeleves"
+payload = {
+    "pin": "56789",
+    "IP": "10.0.0.3"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.status_code, r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/checkeleves", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({ pin: "56789", IP: "10.0.0.3" })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200)
+
+<CodeGroup>
+
+```json Cas normal
+{
+  "message": "success",
+  "token": "a1b2c3d4e5f6789012345678abcdef01"
+}
+```
+
+```json Cas TESTERSPIN
+{
+  "message": "redirect",
+  "url": "/trfdyhbyxwzexvbhjbvcdrswqsrttyuiohvgfder.html"
+}
+```
+
+</CodeGroup>
+
+### Réponse d'erreur (401)
+
+```json
+{
+  "message": "wrong_pin"
+}
+```
+
+---
+
+## POST /logout
+
+Supprime la session active et marque l'utilisateur comme déconnecté dans la table `connected_users`.
+
+### Authentification
+
+Token de session dans le corps JSON.
+
+### Paramètres
+
+<ParamField body="token" type="string" required>
+  Token de session à détruire.
+</ParamField>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/logout" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "IP": "10.0.0.2"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/logout"
+payload = {
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "IP": "10.0.0.2"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/logout", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    token: "a1b2c3d4e5f6789012345678abcdef01",
+    IP: "10.0.0.2"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200)
+
+```json
+{
+  "message": "disconnected"
+}
+```
+
+### Réponse d'erreur (400)
+
+```json
+{
+  "message": "no_token"
+}
+```
+
+---
+
+## POST /checktoken
+
+Vérifie qu'un token est encore valide et renvoie le rôle associé.
+
+### Authentification
+
+Token de session dans le corps JSON.
+
+### Paramètres
+
+<ParamField body="token" type="string" required>
+  Token de session à valider.
+</ParamField>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/checktoken" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "IP": "10.0.0.2"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/checktoken"
+payload = {
+    "token": "a1b2c3d4e5f6789012345678abcdef01",
+    "IP": "10.0.0.2"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.status_code, r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/checktoken", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    token: "a1b2c3d4e5f6789012345678abcdef01",
+    IP: "10.0.0.2"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200)
+
+```json
+{
+  "message": "connected",
+  "user": "profs"
+}
+```
+
+### Réponse d'erreur (401)
+
+```json
+{
+  "message": "error"
+}
+```
+
+---
+
+## Cycle de vie d'une session
+
+<Steps>
+  <Step title="Ping">
+    Appelle `GET /` pour vérifier que l'API est disponible et hors maintenance.
+  </Step>
+  <Step title="Connexion">
+    Appelle `POST /login` (ou `POST /checkeleves` pour les élèves) avec le PIN et l'IP.
+  </Step>
+  <Step title="Utilisation">
+    Envoie le `token` reçu dans toutes les requêtes protégées.
+  </Step>
+  <Step title="Vérification">
+    Appelle `POST /checktoken` régulièrement pour confirmer que la session est toujours active.
+  </Step>
+  <Step title="Déconnexion">
+    Appelle `POST /logout` pour fermer proprement la session et libérer la ligne en base.
+  </Step>
+</Steps>
+
+<Tip>
+  La durée de vie d'une session est définie par `SESSION_TTL` dans `config.yml`. Après expiration, `checktoken` renverra systématiquement une erreur 401.
+</Tip>

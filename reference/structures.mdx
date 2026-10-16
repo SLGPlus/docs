@@ -1,0 +1,262 @@
+---
+title: "Structures de données JSON"
+sidebarTitle: "Structures"
+description: "Détail des objets JSON échangés avec l'API SLGPlus : articles, sessions, défis 2FA, échantillons historiques et réponses standardisées."
+icon: "code-branch"
+---
+
+Cette page recense les objets JSON que tu rencontres dans les requêtes et réponses de l'API SLGPlus. Utilise-la comme référence rapide pour construire ou parser tes payloads.
+
+---
+
+## Article (news)
+
+Représente un article dans `/news` ou dans la file d'attente de modération.
+
+```json
+{
+  "id": "aB3dE5",
+  "by": "Jean Dupont",
+  "title": "Journée sportive",
+  "content": "Le cross du collège aura lieu vendredi...",
+  "image": "https://example.com/photo.jpg"
+}
+```
+
+| Champ | Type | Description |
+| --- | --- | --- |
+| `id` | string | Identifiant public de 6 caractères (lettres min/maj + chiffres) |
+| `by` | string | Nom de l'auteur ou "Auteur inconnu" |
+| `title` | string | Titre de l'article |
+| `content` | string | Contenu texte ou HTML |
+| `image` | string | URL de l'image associée (peut être vide) |
+
+---
+
+## Objet perdu (lost and found)
+
+Représente un objet dans `/lostandfound`.
+
+```json
+{
+  "type": "Veste",
+  "size": "M",
+  "brand": "Nike",
+  "image": "https://example.com/veste.jpg",
+  "description": "Veste noire trouvée dans la cour"
+}
+```
+
+| Champ | Type | Description |
+| --- | --- | --- |
+| `type` | string | Catégorie de l'objet |
+| `size` | string | Taille ou dimension |
+| `brand` | string | Marque |
+| `image` | string | URL de la photo |
+| `description` | string | Description complémentaire |
+
+---
+
+## Session utilisateur
+
+L'objet retourné par `_session_valid()` et utilisé dans les routes protégées.
+
+```json
+{
+  "user": "eleves",
+  "username": "eleves_account"
+}
+```
+
+| Champ | Type | Description |
+| --- | --- | --- |
+| `user` | string | Rôle de l'utilisateur : `eleves`, `admin`, `bvs`, `profs` |
+| `username` | string | Nom du compte dans `users_accounts` |
+
+---
+
+## Challenge 2FA (ÉcoleDirecte)
+
+Objet renvoyé par le microservice Go quand la double authentification est requise.
+
+```json
+{
+  "required": true,
+  "question": "Quelle est ta couleur préférée ?",
+  "choices": ["Bleu", "Rouge", "Vert"],
+  "x_token": "xtok_abc123",
+  "twofa_token": "2fatok_def456",
+  "gtk": "gtk_ghi789"
+}
+```
+
+| Champ | Type | Description |
+| --- | --- | --- |
+| `required` | boolean | `true` si la 2FA est obligatoire |
+| `question` | string | Question décodée en clair |
+| `choices` | string[] | Réponses possibles lisibles |
+| `x_token` | string | Token X à renvoyer dans `/login/2fa` |
+| `twofa_token` | string | Token 2FA à renvoyer |
+| `gtk` | string | GTK à renvoyer |
+
+---
+
+## Échantillon historique (Dashboard)
+
+Mesure ponctuelle pousée par le SSE `/api/stream` ou stockée dans SQLite.
+
+```json
+{
+  "ts": 1735689600.0,
+  "cpu": 12.5,
+  "ram": 45.2,
+  "net_sent_kbps": 12.3,
+  "net_recv_kbps": 45.6,
+  "active_sessions": 7
+}
+```
+
+| Champ | Type | Description |
+| --- | --- | --- |
+| `ts` | float | Timestamp Unix (secondes) |
+| `cpu` | float | Pourcentage d'utilisation CPU |
+| `ram` | float | Pourcentage d'utilisation RAM |
+| `net_sent_kbps` | float | Débit réseau montant en Ko/s |
+| `net_recv_kbps` | float | Débit réseau descendant en Ko/s |
+| `active_sessions` | integer/null | Nombre de sessions SLGPlus actives |
+
+---
+
+## Réponse standardisée
+
+La plupart des routes renvoient un objet avec un champ `message`.
+
+### Succès générique
+
+```json
+{"message": "success"}
+```
+
+### Erreur générique
+
+```json
+{"message": "error"}
+```
+
+### Erreur avec détail
+
+```json
+{"message": "error", "detail": "Impossible de se connecter à la base de données"}
+```
+
+### Réponse avec données
+
+```json
+{
+  "message": "success",
+  "articles": { ... }
+}
+```
+
+---
+
+## Analytics SLGPlus (Dashboard)
+
+Agrégation renvoyée par `/api/analytics`.
+
+```json
+{
+  "available": true,
+  "accounts_by_role": {
+    "eleves": 1,
+    "admin": 1,
+    "bvs": 1
+  },
+  "articles": {
+    "approved": 12,
+    "pending": 2
+  },
+  "lost_and_found": 5,
+  "ideas": 8,
+  "distinct_active_users": 7
+}
+```
+
+| Champ | Type | Description |
+| --- | --- | --- |
+| `available` | boolean | `false` si la base MariaDB est inaccessible |
+| `accounts_by_role` | object | Nombre de comptes par rôle |
+| `articles` | object | `approved` et `pending` |
+| `lost_and_found` | integer | Nombre d'objets enregistrés |
+| `ideas` | integer | Nombre d'idées déposées |
+| `distinct_active_users` | integer | Utilisateurs avec session active |
+
+---
+
+## Forum Flarum (payloads internes)
+
+### Création de discussion
+
+```json
+{
+  "data": {
+    "type": "discussions",
+    "attributes": {
+      "title": "Mon titre",
+      "content": "Mon contenu"
+    },
+    "relationships": {
+      "tags": {
+        "data": [
+          {"type": "tags", "id": "5"}
+        ]
+      }
+    }
+  }
+}
+```
+
+### Création de message
+
+```json
+{
+  "data": {
+    "type": "posts",
+    "attributes": {
+      "content": "Ma réponse"
+    },
+    "relationships": {
+      "discussion": {
+        "data": {
+          "type": "discussions",
+          "id": "42"
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
+## Réponse de modération IA
+
+Objet interne retourné par `_moderate_and_correct()`.
+
+```json
+{
+  "blocked": false,
+  "reason": null,
+  "corrected": "D'accord, merci !"
+}
+```
+
+| Champ | Type | Description |
+| --- | --- | --- |
+| `blocked` | boolean | `true` si le message a été rejeté |
+| `reason` | string/null | Raison du rejet (message à l'utilisateur) |
+| `corrected` | string/null | Texte corrigé si accepté |
+
+<Warning>
+  En cas d'erreur du service Gemini (timeout, quota dépassé), la fonction retourne `{"blocked": false, "corrected": content}` : le message passe sans modération ni correction.
+</Warning>

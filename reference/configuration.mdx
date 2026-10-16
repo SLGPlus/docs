@@ -1,0 +1,198 @@
+---
+title: "Configuration SLGPlus"
+sidebarTitle: "Configuration"
+description: "Structure complète du fichier config.yml et du dictionnaire DASH_CONFIG utilisés par l'API Python et le dashboard serveur."
+icon: "gears"
+---
+
+L'API SLGPlus lit un fichier `config.yml` au démarrage. Le dashboard utilisateur possède sa propre configuration interne `DASH_CONFIG`. Cette page décrit les deux structures : ce que tu dois renseigner, et ce qu'il faut absolument protéger.
+
+<Warning>
+  `config.yml` ne doit jamais être commité. Il contient des mots de passe, des clés d'API et des tokens. Ajoute-le à `.gitignore` et fais tourner régulièrement les clés d'API pour limiter les risques en cas de fuite.
+</Warning>
+
+---
+
+## config.yml
+
+Ce fichier est lu au démarrage de `app.py` via `yaml.safe_load()`. Il doit se trouver dans le dossier d'exécution (à côté de `app.py`).
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: true
+  maintenance:
+    maintenance_mode: false
+    reason: ""
+  version: "v2.0.2-SQL"
+
+security:
+  salt: "REDACTED"
+  session_ttl: 86400
+  testers_pin: REDACTED
+  crontoken: "SLGPLUS__CRONJOB_DAILY"
+
+database:
+  host: "REDACTED"
+  port: 3306
+  user: "REDACTED"
+  password: "REDACTED"
+  database: "REDACTED"
+  pool_size: 64
+
+apikeys:
+  flarum_master: "REDACTED"
+  cerebras_master: "REDACTED"
+  gemini_keys:
+    - "REDACTED"
+    - "REDACTED"
+    - "REDACTED"
+
+forum:
+  limits:
+    discussions: 1
+    posts: 2
+```
+
+### Clés obligatoires
+
+| Clé | Type | Description |
+| --- | --- | --- |
+| `server.host` | string | Adresse d'écoute de l'API Flask |
+| `server.port` | integer | Port d'écoute (5000 par défaut) |
+| `server.version` | string | Version affichée par `GET /` |
+| `server.maintenance.maintenance_mode` | boolean | Active le mode maintenance |
+| `server.maintenance.reason` | string | Raison affichée si maintenance active |
+| `security.session_ttl` | integer | Durée de vie d'une session en secondes (défaut : 86400) |
+| `security.testers_pin` | integer | PIN spécial redirigeant vers la page de test |
+| `security.crontoken` | string | Token attendu par `POST /cron/cleancounter` |
+| `database.host` | string | Hôte MariaDB |
+| `database.port` | integer | Port MariaDB |
+| `database.user` | string | Utilisateur MariaDB |
+| `database.password` | string | Mot de passe MariaDB |
+| `database.database` | string | Nom de la base |
+| `database.pool_size` | integer | Taille du pool de connexions (défaut : 64) |
+| `apikeys.flarum_master` | string | Clé d'API maître de Flarum |
+| `apikeys.gemini_keys` | string[] | Liste de clés Gemini pour la modération IA |
+| `forum.limits.discussions` | integer | Max de discussions par utilisateur et par jour |
+| `forum.limits.posts` | integer | Max de messages par utilisateur et par jour |
+
+### Limitations du modèle
+
+<Accordion title="forum.limits et crontoken absents du template">
+  Le fichier `config_template.yml` fourni dans le dépôt ne contient pas les clés `security.crontoken` ni `forum.limits.discussions` / `forum.limits.posts`. Elles sont lues par `app.py` mais tu dois les ajouter manuellement à ton `config.yml`.
+</Accordion>
+
+<Accordion title="Clé cerebras_master non utilisée par l'API Python">
+  Le modèle contient `apikeys.cerebras_master` mais l'API Python n'en fait pas usage (la modération IA utilise uniquement Gemini). Cette clé est cependant utilisée par l'extension Flarum `BadWordsListener.php`.
+</Accordion>
+
+---
+
+## DASH_CONFIG
+
+Le dashboard ne lit pas `config.yml` pour sa propre configuration. Il définit un dictionnaire `DASH_CONFIG` en tête de `dashboard.py`.
+
+```python
+DASH_CONFIG = {
+    "port": 9000,
+    "password": "slgplusdash",
+    "secret_key": os.urandom(24).hex(),
+
+    "slgplus_config_path": "./config.yml",
+
+    "database": {
+        "host": "127.0.0.1",
+        "port": 3307,
+        "username": "slgplusroot__db",
+        "password": "DBMotDePasseSlgplus123%",
+        "name": "slgplus",
+    },
+
+    "services": {
+        "MariaDB": "wampmariadb64",
+        "Apache (WAMP)": "wampapache64",
+        "Zrok (NSSM)": "ZrokAgent",
+    },
+
+    "watched_processes": {
+        "API SLGPlus Main": {
+            "keyword": "SLGPLUS API - python app.py",
+            "restart_cmd": None,
+            "cwd": None,
+        },
+        "Service Login Ecoledirecte": {
+            "keyword": "edlogin.exe",
+            "restart_cmd": None,
+            "cwd": None,
+        },
+    },
+
+    "scripts": {
+        "Start api et login ED": {
+            "path": r"C:\Utilisateurs\slgplus\bureau\stop-api.bat",
+            "cwd": None,
+        },
+        "Stop api et login ED": {
+            "path": r"C:\Users\slgplus\server\start_api.bat",
+            "cwd": None,
+        },
+    },
+
+    "zrok_public_url": "https://slgplus.shares.zrok.io",
+
+    "history_db": "dashboard_history.sqlite3",
+    "services_refresh_every": 5,
+    "history_write_every": 15,
+}
+```
+
+### Clés principales
+
+| Clé | Type | Description |
+| --- | --- | --- |
+| `port` | integer | Port d'écoute du dashboard |
+| `password` | string | Mot de passe de connexion au dashboard |
+| `secret_key` | string | Clé secrète Flask (générée automatiquement) |
+| `slgplus_config_path` | string | Chemin vers `config.yml` (pour lecture maintenance) |
+| `database` | object | Connexion MariaDB dédiée (si vide, fallback sur `config.yml`) |
+| `services` | object | Services Windows surveillés (nom affiché -> nom service) |
+| `watched_processes` | object | Processus surveillés avec mot-clé et commande de redémarrage |
+| `scripts` | object | Scripts `.bat` exécutables depuis le dashboard |
+| `zrok_public_url` | string | URL publique zrok à tester |
+| `history_db` | string | Chemin de la base SQLite embarquée |
+| `services_refresh_every` | integer | Intervalle de rafraîchissement des services (secondes) |
+| `history_write_every` | integer | Intervalle d'écriture dans SQLite (secondes) |
+
+<Warning>
+  Les identifiants `database.username` et `database.password` dans `DASH_CONFIG` sont définis en clair. Pense à les remplacer avant de mettre en production, et à ne jamais versionner `dashboard.py` avec des secrets réels.
+</Warning>
+
+<Info>
+  Si `database.username` est vide, le dashboard tente de lire la connexion depuis `config.yml` via `load_slgplus_config()`.
+</Info>
+
+---
+
+## Variables d'environnement recommandées
+
+Pour éviter de stocker les secrets en dur, tu peux charger certaines valeurs depuis l'environnement :
+
+```python
+import os
+
+DB_PASSWORD = os.environ.get("SLGPLUS_DB_PASSWORD", "")
+GEMINI_KEYS = os.environ.get("SLGPLUS_GEMINI_KEYS", "").split(",")
+```
+
+| Variable | Utilisée par | Description |
+| --- | --- | --- |
+| `SLGPLUS_DB_PASSWORD` | API + Dashboard | Mot de passe MariaDB |
+| `SLGPLUS_GEMINI_KEYS` | API | Clés Gemini séparées par des virgules |
+| `SLGPLUS_FLARUM_KEY` | API + Flarum | Clé maître Flarum |
+| `SLGPLUS_CRON_TOKEN` | API | Token pour `/cron/cleancounter` |
+
+<Note>
+  L'implémentation actuelle ne lit pas ces variables d'environnement : c'est une recommandation pour sécuriser ton déploiement.
+</Note>

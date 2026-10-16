@@ -1,0 +1,101 @@
+---
+title: "Tâche cron : nettoyage quotidien des compteurs forum"
+description: "Le script cron.py appelle la route /cron/cleancounter de l'API pour réinitialiser les limites quotidiennes des utilisateurs du forum. Attention à la casse de la route et au protocole HTTP."
+sidebarTitle: "Cron"
+icon: "clock"
+---
+
+Le fichier `api_source/cron.py` est un script Python simple qui appelle la route de remise à zéro des compteurs du forum. Il doit être exécuté une fois par jour.
+
+## Fonctionnement
+
+Le script effectue une requête `POST` vers `http://localhost:5000/cron/cleancounter` avec un jeton d'authentification :
+
+```python title="cron.py"
+import requests
+
+print("SLGPlus Tâches du jour")
+print("Nettoyage des compteurs quotidiens...")
+
+url = 'http://localhost:5000/cron/cleancounter'
+payload = {'token': 'SLGPLUS__CRONJOB_DAILY'}
+
+response = requests.post(url, json=payload)
+print(response.text)
+print(response.status_code)
+print("Tâches exécutées avec succès !")
+```
+
+<Warning>
+  Le jeton `SLGPLUS__CRONJOB_DAILY` est codé en dur dans le fichier `cron.py`. Cette valeur doit être déplacée dans une variable d'environnement ou le fichier `config.yml`, puis renouvelée régulièrement.
+</Warning>
+
+## Problèmes connus
+
+Deux incohérences ont été identifiées dans le code actuel :
+
+<Warning>
+  **Casse de la route** : `cron.py` appelle `/cron/cleanCounter` (C majuscule) alors que la route déclarée dans `app.py` est `/cron/cleancounter` (c minuscule). Flask est sensible à la casse : le script actuel retournera une erreur 404.
+</Warning>
+
+<Warning>
+  **Protocole HTTPS** : `cron.py` utilise `https` sur `0.0.0.0:5000`. L'API écoute en HTTP sur ce port. Le script doit utiliser `http://` pour fonctionner correctement en local.
+</Warning>
+
+## Planification
+
+### Linux (cron)
+
+```bash title="Crontab quotidien à 3h du matin"
+0 3 * * * /usr/bin/python3 /chemin/vers/cron.py >> /var/log/slgplus-cron.log 2>&1
+```
+
+### Windows (Planificateur de tâches)
+
+1. Ouvrir le Planificateur de tâches Windows
+2. Créer une tâche de base, déclencheur quotidien à l'heure souhaitée
+3. Action : Démarrer un programme
+4. Programme : `python.exe`
+5. Arguments : `C:\chemin\vers\cron.py`
+
+## Ce que fait la route côté API
+
+La classe `CleanCounters` dans `app.py` effectue les opérations suivantes :
+
+<Steps>
+  <Step title="Vérification du jeton">
+    Le jeton fourni est comparé à `CONFIG["security"]["crontoken"]`
+  </Step>
+  <Step title="Nettoyage des groupes">
+    Pour chaque utilisateur dans `forum_limit_posts` ou `forum_limit_discussions`, le groupe 9 est retiré
+  </Step>
+  <Step title="Vidage des tables">
+    `TRUNCATE TABLE forum_limit_discussions` et `TRUNCATE TABLE forum_limit_posts`
+  </Step>
+</Steps>
+
+```python title="CleanCounters"
+class CleanCounters(Resource):
+    def post(self):
+        args = request.json
+        if args["token"] != CONFIG["security"]["crontoken"]:
+            return {"message": "Not authorized"}, 401
+
+        conn = db()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("""
+            SELECT userid FROM forum_limit_discussions
+            UNION
+            SELECT userid FROM forum_limit_posts
+        """)
+        rows = cur.fetchall()
+        for row in rows:
+            userid = row["userid"]
+            _remove_flarum_groups(userid, 9)
+
+        cur.execute("TRUNCATE TABLE forum_limit_discussions")
+        cur.execute("TRUNCATE TABLE forum_limit_posts")
+        conn.commit()
+        conn.close()
+        return {"message": "success"}, 200
+```

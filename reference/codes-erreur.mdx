@@ -1,0 +1,222 @@
+---
+title: "Codes d'erreur et status HTTP"
+sidebarTitle: "Codes d'erreur"
+description: "Catalogue des codes status HTTP et des messages JSON retournés par l'API SLGPlus, avec signification et conduite à tenir."
+icon: "triangle-exclamation"
+---
+
+L'API SLGPlus renvoie des codes HTTP standards complétés par un JSON contenant un champ `message`. Cette page liste chaque code que tu peux rencontrer, ce qu'il signifie et comment y répondre.
+
+---
+
+## Codes HTTP par ressource
+
+### 200 OK
+
+La requête a réussi. Le corps contient le résultat attendu.
+
+```json
+{"message": "success"}
+```
+
+Routes courantes : `GET /`, `GET /news`, `POST /login`, `POST /logout`, `POST /forum/login/flarum`.
+
+### 201 Created
+
+Création réussie (renvoyé indirectement via les réponses de Flarum sur `/forum/post` et `/forum/discussion`).
+
+---
+
+## 400 Bad Request
+
+Champs manquants ou invalides dans le corps JSON.
+
+```json
+{"message": "missing_fields"}
+```
+
+| Route concernée | Cause probable |
+| --- | --- |
+| `POST /forum/login/flarum` | `prenom`, `nom`, `email`, `sexe` ou `classe` vide |
+| `POST /forum/post` | `content`, `discussion_id`, `flarum_token` ou `flarum_user_id` manquant |
+| `POST /forum/discussion` | `title`, `content`, `tag_id`, `flarum_token` ou `flarum_user_id` manquant |
+
+**Conduite à tenir** : vérifie que tous les champs obligatoires sont présents et non vides.
+
+---
+
+## 401 Unauthorized
+
+Authentification échouée ou session invalide / expirée.
+
+```json
+{"message": "wrong_pin"}
+```
+
+```json
+{"message": "unauthorized"}
+```
+
+```json
+{"message": "error"}
+```
+
+| Route | Signification |
+| --- | --- |
+| `POST /login` | PIN incorrect pour le rôle demandé |
+| `POST /checkeleves` | PIN incorrect |
+| `POST /logout` | Aucun token fourni |
+| `POST /checktoken` | Token inexistant ou expiré |
+| Routes protégées (`/news` POST, `/lostandfound`, etc.) | Token manquant, invalide ou session expirée |
+| `POST /cron/cleancounter` | Token cron incorrect |
+
+<Info>
+  Une session expire après `security.session_ttl` secondes d'inactivité (défaut : 86400). Chaque appel valide réinitialise le compteur.
+</Info>
+
+**Conduite à tenir** : redirige l'utilisateur vers la page de connexion et demande un nouveau PIN.
+
+---
+
+## 403 Forbidden
+
+Authentifié, mais rôle insuffisant ou limite atteinte.
+
+```json
+{"message": "unauthorized"}
+```
+
+```json
+{"message": "refused", "reason": "Tu as atteint la limite de 2 messages !"}
+```
+
+| Route | Signification |
+| --- | --- |
+| `POST /lostandfound` | Le rôle n'est pas `bvs` |
+| `POST /idea` | Le rôle n'est pas `eleves` |
+| `POST /admin/*` | Le rôle n'est pas `admin` |
+| `POST /forum/post` | Limite quotidienne de messages atteinte (`forum.limits.posts`) |
+| `POST /forum/discussion` | Limite quotidienne de discussions atteinte (`forum.limits.discussions`) |
+
+**Conduite à tenir** : affiche un message explicatif. Pour les limites forum, informe l'utilisateur qu'il peut réessayer demain.
+
+---
+
+## 404 Not Found
+
+Route ou ressource inexistante. Flask-RESTful renvoie ce code pour les ressources non enregistrées.
+
+<Warning>
+  `LoginED1`, `LoginED2` et `ProxyImage` sont définis dans `app.py` mais **ne sont pas enregistrés** via `api.add_resource()`. Les appels vers ces routes retournent un 404.
+</Warning>
+
+---
+
+## 500 Internal Server Error
+
+Erreur inattendue côté serveur (base de données, fichier manquant, etc.).
+
+```json
+{"message": "error"}
+```
+
+| Route | Cause probable |
+| --- | --- |
+| `POST /admin/setpin` | Erreur SQL lors de la mise à jour du hash |
+
+**Conduite à tenir** : contacte l'administrateur du serveur. Vérifie que le fichier `config.yml` est présent et que MariaDB est accessible.
+
+---
+
+## 502 Bad Gateway
+
+Service externe injoignable.
+
+```json
+{"success": false, "message": "Impossible de contacter EcoleDirecte : ..."}
+```
+
+| Route | Service défaillant |
+| --- | --- |
+| `LoginED1` (si exposé) | Microservice Go `edlogin.go` sur `localhost:8080` |
+| `LoginED2` (si exposé) | Microservice Go `edlogin.go` |
+| `ProxyImage` (si exposé) | Serveur d'images ÉcoleDirecte |
+| `POST /forum/login/flarum` | API Flarum sur `localhost/flarum-forum/api` |
+| `POST /forum/post` | API Flarum sur `slgplus.shares.zrok.io` |
+| `POST /forum/discussion` | API Flarum sur `slgplus.shares.zrok.io` |
+
+**Conduite à tenir** : vérifie que les services internes (Go, Flarum) tournent bien. Le dashboard à `/api/services` peut t'aider à diagnostiquer.
+
+---
+
+## Messages spécifiques
+
+### Connexion
+
+| Message | Signification |
+| --- | --- |
+| `success` | Connexion réussie, un token est retourné |
+| `wrong_pin` | PIN incorrect |
+| `tokenerror` | Un token a été fourni alors qu'on en attendait pas (route `/login`) |
+| `no_token` | Aucun token fourni à `/logout` |
+| `disconnected` | Déconnexion réussie |
+| `connected` | Token valide, renvoie aussi le rôle |
+| `redirect` | PIN testeur correct, renvoie une URL de redirection |
+
+### Articles
+
+| Message | Signification |
+| --- | --- |
+| `approved` | Article approuvé |
+| `unapproved` | Article en attente |
+| `notfound` | Article introuvable |
+
+### Forum
+
+| Message | Signification |
+| --- | --- |
+| `missing_fields` | Champs obligatoires manquants |
+| `creation_failed` | Impossible de créer le compte Flarum |
+| `refused` | Message bloqué par la modération IA ou limite atteinte |
+
+### Dashboard
+
+| Message | Signification |
+| --- | --- |
+| `wrong_password` | Mot de passe dashboard incorrect |
+| `unknown_service` | Service Windows non configuré |
+| `invalid_action` | Action différente de start/stop/restart |
+| `not_running` | Le processus est déjà arrêté |
+| `killed_no_relaunch` | Processus arrêté mais aucune commande de relance configurée |
+| `restart_failed` | La relance n'a pas été détectée après 1 seconde |
+
+---
+
+## Récapitulatif par code HTTP
+
+| Code | Signification générale | Action recommandée |
+| --- | --- | --- |
+| 200 | Succès | Traiter la réponse normalement |
+| 201 | Création réussie | Traiter la réponse normalement |
+| 400 | Requête invalide | Vérifier les champs obligatoires |
+| 401 | Non authentifié | Redemander le PIN ou reconnecter |
+| 403 | Rôle insuffisant / refusé | Vérifier les permissions ou les limites |
+| 404 | Ressource inexistante | Vérifier l'URL ou l'ID demandé |
+| 500 | Erreur serveur | Contacter l'administrateur |
+| 502 | Service externe injoignable | Vérifier les services internes (Go, Flarum) |
+
+---
+
+## Bugs connus affectant les réponses
+
+<Accordion title="Variable headers non définie dans CreatePost">
+  Dans la branche administrateur de `CreatePost`, la variable `headers` est utilisée avant d'être définie. Cela provoque une exception Python retournant un 500 si un administrateur (id 1) tente de poster un message.
+</Accordion>
+
+<Accordion title="cron.py appelle la mauvaise URL">
+  `cron.py` appelle `http://localhost:5000/cron/cleancounter` mais la route déclarée est `/cron/cleancounter` (Flask est sensible à la casse). Si un jour la route change de casse, le cron échouera en 404.
+</Accordion>
+
+<Accordion title="Pas de requirements.txt">
+  Il n'existe pas de `requirements.txt` dans le dépôt. En cas d'erreur 500 liée à un module manquant, installe les dépendances listées dans le README.
+</Accordion>

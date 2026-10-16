@@ -1,0 +1,145 @@
+---
+title: "Microservice ÉcoleDirecte : connexion en Go à l'API du collège"
+description: "Le microservice ÉcoleDirecte, écrit en Go, gère l'authentification vers le système d'information du collège, incluant la double authentification. Il sert de relais pour le forum."
+sidebarTitle: "ÉcoleDirecte Go"
+icon: "golang"
+---
+
+Le fichier `api_source/edlogin.go` est un microservice Go qui fait office de relais entre le forum et l'API ÉcoleDirecte. Il écoute sur `localhost:8080` et ne partage aucun état entre les utilisateurs : un nouveau client HTTP est créé à chaque requête.
+
+<Note>
+  Un grand merci à l'équipe d'[EcoleDirectePlus](https://ecoledirecte.plus/) pour l'analyse approfondie du protocole ÉcoleDirecte, qui a permis la réalisation de ce service.
+</Note>
+
+## Constantes
+
+```go title="Constantes du client ÉcoleDirecte"
+const (
+    ApiVersion = "4.69.1"
+    BaseURL    = "https://api.ecoledirecte.com/v3"
+    UserAgent  = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ..."
+)
+```
+
+## Architecture client
+
+Chaque requête crée un nouveau `Client` avec son propre `cookiejar` et ses propres timeouts. Cela garantit l'isolement entre les sessions utilisateurs.
+
+```go title="Nouveau client par requête"
+type Client struct {
+    HTTPClient *http.Client
+    GTK        string
+    XToken     string
+    TwoFAToken string
+}
+
+func NewClient() *Client {
+    jar, _ := cookiejar.New(nil)
+    return &Client{
+        HTTPClient: &http.Client{
+            Jar:     jar,
+            Timeout: 15 * time.Second,
+        },
+    }
+}
+```
+
+## Flux d'authentification
+
+### Étape 1 : Init GTK
+
+Le client récupère un cookie `GTK` indispensable pour les appels suivants.
+
+```go
+client.DoRequest("GET", "/login.awp?gtk=1&v="+ApiVersion, "", false)
+```
+
+### Étape 2 : Login initial
+
+Envoi des identifiants. Si la réponse porte le code `250`, une double authentification est requise.
+
+### Étape 3 : Double authentification (2FA)
+
+Le serveur renvoie une question et des choix au format base64. Le frontend affiche le QCM, puis rappelle `/login/2fa` avec la réponse.
+
+<CodeGroup>
+
+```go title="Réponse 2FA (code 250)"
+if code == 250 {
+    // Récupération de la question
+    qBody, err := client.DoRequest("POST",
+        "/connexion/doubleauth.awp?verbe=get&v="+ApiVersion,
+        `data={}`, true)
+
+    // Décodage base64 de la question et des choix
+    questionB64, _ := base64.StdEncoding.DecodeString(qData["question"].(string))
+    // ...
+
+    writeJSON(w, 200, map[string]interface{}{
+        "success": false,
+        "code":    250,
+        "twofa": TwoFAChallenge{
+            Required:   true,
+            Question:   string(questionB64),
+            Choices:    decodedChoices,
+            XToken:     client.XToken,
+            TwoFAToken: client.TwoFAToken,
+            GTK:        client.GTK,
+        },
+        "choices_raw": choices, // base64 à renvoyer dans /login/2fa
+    })
+}
+```
+
+</CodeGroup>
+
+### Étape 4 : Validation 2FA et login final
+
+Le handler `/login/2fa` valide la réponse QCM, récupère les tokens `cn` et `cv`, puis effectue le login final avec ces paramètres.
+
+## Routes exposées
+
+| Méthode | Route | Description |
+| --- | --- | --- |
+| `POST` | `/login` | Login initial, retourne les données ou un challenge 2FA |
+| `POST` | `/login/2fa` | Validation de la double authentification |
+| `GET` | `/health` | Vérification de fonctionnement |
+
+## Configuration CORS
+
+Le middleware CORS n'autorise explicitement que l'origine du forum :
+
+```go title="CORS restrictif"
+func cors(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        origin := r.Header.Get("Origin")
+        switch origin {
+        case "https://forum-slgplus.great-site.net":
+            w.Header().Set("Access-Control-Allow-Origin", origin)
+        }
+        // ...
+    })
+}
+```
+
+## Timeouts du serveur
+
+Le serveur utilise des timeouts HTTP pour éviter les goroutines bloquées :
+
+| Paramètre | Valeur | Rôle |
+| --- | --- | --- |
+| `ReadTimeout` | 10s | Temps max pour lire la requête |
+| `WriteTimeout` | 30s | Temps max pour écrire la réponse |
+| `IdleTimeout` | 60s | Durée max du keep-alive |
+| `MaxHeaderBytes` | 1 Mo | Taille max des en-têtes |
+
+## Démarrage
+
+```bash
+go run edlogin.go
+# ou
+go build -o edlogin edlogin.go
+./edlogin
+```
+
+Le service démarre sur `localhost:8080`.

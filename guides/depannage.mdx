@@ -1,0 +1,156 @@
+---
+title: "Dépannage des problèmes courants"
+sidebarTitle: "Dépannage"
+description: "Solutions aux problèmes fréquents de SLGPlus : impossible de se connecter, erreurs 502, 403, échec d’authentification, limites forum, maintenance et autres bugs connus."
+icon: "wrench"
+---
+
+SLGPlus est constitué de plusieurs composants indépendants. Quand quelque chose ne fonctionne pas, la première étape consiste à identifier quelle brique est en cause. Cette page regroupe les symptômes les plus courants, leurs causes probables et les actions à entreprendre.
+
+<Accordion title="Le PIN est refusé ou la session est invalide">
+  Le frontend affiche une erreur après la saisie du PIN, ou redirige immédiatement vers la page de connexion.
+
+  **Causes possibles**
+
+  - Le hash du PIN dans `users_accounts` ne correspond plus à la valeur attendue.
+  - La session a expiré (TTL dépassé).
+  - Le token stocké dans `localStorage` a été corrompu ou supprimé.
+
+  **Actions**
+
+  1. Videz `localStorage` pour l'origine concernée (`localStorage.clear()` dans la console du navigateur).
+  2. Vérifiez dans MariaDB que la ligne `users_accounts` pour le rôle existe bien et contient un `pin_hash` non vide.
+  3. Si vous êtes administrateur, utilisez `/admin/setpin` pour régénérer le hash.
+</Accordion>
+
+<Accordion title="Erreur 502 (service externe injoignable)">
+  Le frontend affiche "Erreur de connexion" ou le code 502 apparaît dans la console.
+
+  **Causes possibles**
+
+  - Le microservice Go `edlogin.go` n'est pas démarré (il écoute sur `localhost:8080`).
+  - Le tunnel zrok est tombé ou le service `ZrokAgent` est arrêté.
+  - Le serveur WAMP / Apache ne relaye plus les requêtes vers l'API.
+
+  **Actions**
+
+  1. Depuis le dashboard, vérifiez que le process "Service Login Ecoledirecte" est en cours.
+  2. Vérifiez le statut du service "Zrok (NSSM)". Redémarrez-le si besoin.
+  3. Testez l'API en local : `curl http://localhost:5000/`. Si elle répond, le problème vient du proxy ou du tunnel.
+</Accordion>
+
+<Accordion title="Le forum refuse mes messages (403)">
+  La publication d'un message ou d'une discussion retourne un refus avec la raison "Tu as atteint la limite".
+
+  **Causes possibles**
+
+  - La limite quotidienne de 2 messages ou 1 discussion a été atteinte (non administrateur).
+  - Le modèle Gemini a bloqué le contenu pour cause d'insulte, spam ou acrostiche détecté.
+  - Le listener Flarum a refusé le message via sa liste de mots ou Cerebras.
+
+  **Actions**
+
+  1. Attendez le lendemain pour que les compteurs soient remis à zéro par le cron.
+  2. Relisez le message pour vérifier qu'il ne contient pas d'abréviations excessives, de majuscules formant un acrostiche ou du brainrot.
+  3. Si vous êtes administrateur (identifiant Flarum 1), les limites ne s'appliquent pas.
+</Accordion>
+
+<Accordion title="Le mode maintenance ne s'active pas">
+  Le dashboard indique que la maintenance est activée, mais le frontend continue d'afficher le site normalement.
+
+  **Cause** L'API Python charge `config.yml` une seule fois au démarrage. Modifier le fichier ne suffit pas : le process doit être redémarré.
+
+  **Actions**
+
+  1. Activez la maintenance depuis le dashboard.
+  2. Redémarrez explicitement le process "API SLGPlus Main" via le dashboard.
+  3. Vérifiez la réponse de `GET /` : `status.maintenance` doit valoir `true`.
+</Accordion>
+
+<Accordion title="LoginED1, LoginED2 ou ProxyImage inaccessibles">
+  Ces trois classes sont définies dans `app.py` mais ne sont pas enregistrées comme routes via `api.add_resource(...)`.
+
+  **Conséquence** Même si vous essayez d'appeler `/logined1`, `/logined2` ou `/proxyimage`, Flask retournera une erreur 404.
+
+  **Actions** Ce n'est pas un dysfonctionnement de votre installation. Les routes sont absentes du code actuel. Si vous en avez besoin pour un usage particulier, ajoutez les lignes correspondantes dans `app.py` :
+
+  ```python
+  api.add_resource(LoginED1, '/logined1')
+  api.add_resource(LoginED2, '/logined2')
+  api.add_resource(ProxyImage, '/proxyimage')
+  ```
+</Accordion>
+
+<Accordion title="Bug de `headers` dans CreatePost (branche admin)">
+  Dans `CreatePost`, la branche pour l'administrateur (`flarum_user_id == 1`) utilise la variable `headers` avant qu'elle ne soit définie.
+
+  **Conséquence** Si un administrateur tente de publier un message, un `NameError` se produit à l'exécution.
+
+  **Actions** Déplacez la définition de `headers` avant le bloc conditionnel `if flarum_user_id == 1`, ou supprimez la branche spécifique si vous ne l'utilisez pas.
+</Accordion>
+
+<Accordion title="Le cron échoue avec une erreur de connexion">
+  Le script `cron.py` appelle `http://localhost:5000/cron/cleancounter` avec une charge utile JSON contenant le token.
+
+  **Causes possibles**
+
+  - L'API n'est pas démarrée sur le port 5000.
+  - Le token dans `cron.py` ne correspond pas à `security.crontoken` dans `config.yml`.
+  - `config.yml` ne contient pas la clé `security.crontoken` (elle est absente du modèle).
+
+  **Actions**
+
+  1. Assurez-vous que l'API tourne (`python app.py` actif).
+  2. Ajoutez manuellement `security.crontoken` dans votre `config.yml`.
+  3. Vérifiez que la valeur du token dans `cron.py` correspond exactement à celle du fichier.
+  4. Notez que `cron.py` utilise `http`, alors que l'API en production utilise `https` via zrok. En local, `http://localhost:5000` est l'URL correcte.
+</Accordion>
+
+<Accordion title="Le conteneur MariaDB refuse les connexions">
+  L'API ou le dashboard retourne une erreur liée à la base de données.
+
+  **Causes possibles**
+
+  - MariaDB n'est pas démarré (service Windows arrêté).
+  - Les identifiants dans `config.yml` sont incorrects.
+  - Le `pool_size` est trop faible pour le nombre de requêtes simultanées.
+
+  **Actions**
+
+  1. Vérifiez le service `wampmariadb64` dans le gestionnaire de services Windows.
+  2. Testez la connexion manuellement :
+     ```bash
+     mariadb -u <user> -p -h <host> -P <port>
+     ```
+  3. Augmentez `pool_size` dans `config.yml` si vous constatez des erreurs de connexion sous forte charge.
+</Accordion>
+
+<Accordion title="Le frontend affiche des erreurs 403 ou 404 sur les pages du forum">
+  Le forum Flarum est servi par Apache dans le dossier `public/`. Si la configuration rewrite ou les permissions PHP sont incorrectes, certaines routes internes de Flarum renvoient 404.
+
+  **Actions**
+
+  1. Vérifiez que le module `rewrite` d'Apache est activé.
+  2. Confirmez que le `.htaccess` dans `flarum/public/` est présent et lisible par Apache.
+  3. Assurez-vous que PHP est correctement configuré dans WAMP.
+</Accordion>
+
+## Outils de diagnostic rapide
+
+Voici quelques appels `curl` que vous pouvez exécuter depuis le serveur lui-même pour vérifier chaque composant :
+
+```bash
+# API principale
+curl -s http://localhost:5000/ | python -m json.tool
+
+# Microservice Go
+curl -s http://localhost:8080/health | python -m json.tool
+
+# Forum Flarum (local)
+curl -s http://localhost/flarum-forum/api | head -n 5
+
+# zrok public
+curl -s https://api-slgplus.shares.zrok.io/ -H "skip_zrok_interstitial: 1" | python -m json.tool
+```
+
+Si ces quatre appels répondent correctement, votre pile est fonctionnelle. Sinon, remontez vers le composant qui ne répond pas.

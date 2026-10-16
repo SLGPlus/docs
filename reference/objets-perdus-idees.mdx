@@ -1,0 +1,223 @@
+---
+title: "Objets perdus et idees SLGPlus : consulter et gerer"
+sidebarTitle: "Objets et idees"
+description: "Endpoints de l'API SLGPlus pour les objets perdus (role BVS) et les idees des eleves. Consultez, ajoutez ou supprimez des fiches."
+icon: "box-open"
+---
+
+Ces routes servent deux cas distincts du portail : la vie scolaire gere les objets perdus dans une vitrine consultable par tous, et les eleves deposent des idees anonymisees dans une boite a idees.
+
+## GET `/lostandfound`
+
+Liste l'ensemble des objets perdus enregistres, du plus recent au plus ancien. Pas d'authentification requise.
+
+<ParamField body="none" type="none">
+  Cette route ne recoit pas de corps. Le frontend peut toutefois envoyer une cle `IP`.
+</ParamField>
+
+### Reponse 200
+
+La reponse est un objet dont les cles sont les identifiants internes de la base.
+
+<ResponseField name="id" type="integer">
+  Identifiant interne (`id`)
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Type d'objet (ex: "gourde", "blouson")
+</ResponseField>
+
+<ResponseField name="size" type="string">
+  Taille ou dimension
+</ResponseField>
+
+<ResponseField name="brand" type="string">
+  Marque
+</ResponseField>
+
+<ResponseField name="image" type="string">
+  URL d'une photo
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Description detaillee
+</ResponseField>
+
+```json
+{
+  "1": {
+    "type": "gourde",
+    "size": "500ml",
+    "brand": "Decathlon",
+    "image": "https://example.com/gourde.jpg",
+    "description": "Gourde bleue trouvee dans la cour"
+  },
+  "2": {
+    "type": "blouson",
+    "size": "M",
+    "brand": "Zara",
+    "image": "",
+    "description": "Blouson noir sans marques distinctives"
+  }
+}
+```
+
+---
+
+## POST `/lostandfound`
+
+Ajoute ou supprime un objet perdu. Reserve au role `bvs` (vie scolaire).
+
+<ParamField body="token" type="string" required>
+  Jeton de session valide avec role `bvs`
+</ParamField>
+
+<ParamField body="mode" type="string">
+  `"post"` pour ajouter (par defaut), `"del"` pour supprimer
+</ParamField>
+
+<ParamField body="torem" type="string">
+  Identifiant interne `id` de l'objet a supprimer (seulement en mode `del`)
+</ParamField>
+
+### Mode post
+
+Lorsque `mode` vaut `"post"` ou est absent, le champ `content` contient la fiche :
+
+<ParamField body="content" type="object" required>
+  <Expandable title="Champs de la fiche">
+    <ResponseField name="type" type="string">
+      Type d'objet
+    </ResponseField>
+
+    <ResponseField name="size" type="string">
+      Taille
+    </ResponseField>
+
+    <ResponseField name="brand" type="string">
+      Marque
+    </ResponseField>
+
+    <ResponseField name="image" type="string">
+      URL de photo
+    </ResponseField>
+
+    <ResponseField name="description" type="string">
+      Description textuelle
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+### Reponses
+
+**200** Operation reussie
+
+```json
+{
+  "message": "success"
+}
+```
+
+**401** Jeton invalide ou role different de `bvs`
+
+```json
+{
+  "message": "unauthorized"
+}
+```
+
+---
+
+## POST `/idea`
+
+Depose une idee dans la boite a idees. Reserve au role `eleves`.
+
+<ParamField body="token" type="string" required>
+  Jeton de session valide avec role `eleves`
+</ParamField>
+
+<ParamField body="title" type="string" required>
+  Titre de l'idee
+</ParamField>
+
+<ParamField body="content" type="string" required>
+  Description detaillee
+</ParamField>
+
+<ParamField body="author" type="string">
+  Nom de l'auteur
+</ParamField>
+
+### Reponse 200
+
+```json
+{
+  "message": "success"
+}
+```
+
+### Erreurs
+
+**401** Jeton absent ou invalide.
+
+**403** Le role associe au jeton n'est pas `eleves`.
+
+<Note>
+  La ligne inseree dans la table `idea` stocke successivement l'adresse IP (`args["IP"]`), le titre, le contenu et l'auteur. L'insertion utilise `INSERT INTO idea VALUES (?,?,?,?)` sans nommer les colonnes.
+</Note>
+
+---
+
+## Exemples d'appels
+
+<CodeGroup>
+
+```bash title="Lister les objets perdus"
+curl -X GET "https://api-slgplus.shares.zrok.io/lostandfound" \
+  -H "skip_zrok_interstitial: 1"
+```
+
+```bash title="Ajouter un objet perdu (BVS)"
+curl -X POST "https://api-slgplus.shares.zrok.io/lostandfound" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "VOTRE_JETON",
+    "mode": "post",
+    "content": {
+      "type": "casque",
+      "size": "taille unique",
+      "brand": "Sony",
+      "image": "",
+      "description": "Casque sans fil blanc retrouvé au CDI"
+    },
+    "IP": "192.168.1.1"
+  }'
+```
+
+```bash title="Supprimer un objet perdu (BVS)"
+curl -X POST "https://api-slgplus.shares.zrok.io/lostandfound" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "VOTRE_JETON",
+    "mode": "del",
+    "torem": "3",
+    "IP": "192.168.1.1"
+  }'
+```
+
+```bash title="Deposer une idee (eleves)"
+curl -X POST "https://api-slgplus.shares.zrok.io/idea" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "VOTRE_JETON",
+    "title": "Ajouter une fontaine a eau",
+    "content": "Il serait pratique d avoir une fontaine au 1er etage.",
+    "author": "Anonyme",
+    "IP": "192.168.1.1"
+  }'
+```
+
+</CodeGroup>

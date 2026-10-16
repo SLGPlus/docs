@@ -1,0 +1,298 @@
+---
+title: "Service ÉcoleDirecte Go"
+sidebarTitle: "ÉcoleDirecte Go"
+description: "Points d'accès du microservice Go qui relaye les connexions vers l'API ÉcoleDirecte, avec authentification simple et double facteur."
+icon: "graduation-cap"
+---
+
+Le microservice `edlogin.go` tourne sur `localhost:8080` et sert d'intermédiaire entre le frontend et l'API ÉcoleDirecte. Il gère la connexion simple et la double authentification (2FA), sans partager d'état entre utilisateurs : chaque requête crée son propre client HTTP.
+
+<Warning>
+  Les routes `LoginED1`, `LoginED2` et `ProxyImage` sont définies dans `app.py` mais **ne sont pas enregistrées** dans l'API Flask. Elles ne sont pas accessibles via l'API publique actuellement.
+</Warning>
+
+## Base URL
+
+```text
+http://localhost:8080
+```
+
+Le CORS n'autorise que l'origine `https://forum-slgplus.great-site.net`.
+
+---
+
+## POST /login
+
+Authentification simple sur ÉcoleDirecte. Si le compte n'a pas la double authentification, la réponse contient directement les données du compte. Sinon, elle renvoie un défi 2FA avec les tokens nécessaires pour valider la seconde étape.
+
+### Paramètres
+
+<ParamField body="username" type="string" required>
+  Identifiant ÉcoleDirecte.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Mot de passe ÉcoleDirecte.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST http://localhost:8080/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"mon.identifiant","password":"monMotDePasse"}'
+```
+
+```python Python
+import requests
+
+resp = requests.post("http://localhost:8080/login", json={
+    "username": "mon.identifiant",
+    "password": "monMotDePasse"
+})
+print(resp.json())
+```
+
+```javascript JavaScript
+const resp = await fetch('http://localhost:8080/login', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({username: 'mon.identifiant', password: 'monMotDePasse'})
+});
+const data = await resp.json();
+console.log(data);
+```
+
+</CodeGroup>
+
+### Réponses
+
+#### Succès direct (code 200)
+
+<ResponseField name="success" type="boolean">
+  `true` si la connexion a réussi.
+</ResponseField>
+
+<ResponseField name="code" type="integer">
+  Code de réponse ÉcoleDirecte (`200`).
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Données du compte renvoyées par ÉcoleDirecte.
+</ResponseField>
+
+```json
+{
+  "success": true,
+  "code": 200,
+  "data": { ... }
+}
+```
+
+#### Double authentification requise (code 250)
+
+<ResponseField name="success" type="boolean">
+  `false` : la connexion n'est pas terminée.
+</ResponseField>
+
+<ResponseField name="code" type="integer">
+  `250` : 2FA requise.
+</ResponseField>
+
+<ResponseField name="twofa" type="object">
+  Contient `required`, `question`, `choices`, `x_token`, `twofa_token`, `gtk`.
+</ResponseField>
+
+<ResponseField name="choices_raw" type="string[]">
+  Les réponses encodées en base64 à renvoyer telles quelles à `/login/2fa`.
+</ResponseField>
+
+```json
+{
+  "success": false,
+  "code": 250,
+  "twofa": {
+    "required": true,
+    "question": "Quelle est ta couleur préférée ?",
+    "choices": ["Bleu", "Rouge", "Vert"],
+    "x_token": "...",
+    "twofa_token": "...",
+    "gtk": "..."
+  },
+  "choices_raw": ["Qm...", "Um...", "Vm..."]
+}
+```
+
+#### Erreurs
+
+<ResponseField name="code" type="integer">
+  `400` si les champs sont manquants ou invalides.
+</ResponseField>
+
+<ResponseField name="code" type="integer">
+  `401` si les identifiants sont incorrects.
+</ResponseField>
+
+<ResponseField name="code" type="integer">
+  `502` si ÉcoleDirecte est injoignable.
+</ResponseField>
+
+---
+
+## POST /login/2fa
+
+Valide la réponse à la question de double authentification et finalise la connexion.
+
+### Paramètres
+
+<ParamField body="username" type="string" required>
+  Identifiant ÉcoleDirecte.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Mot de passe ÉcoleDirecte.
+</ParamField>
+
+<ParamField body="cn" type="string" required>
+  Valeur `cn` retournée par l'étape de validation du QCM.
+</ParamField>
+
+<ParamField body="cv" type="string" required>
+  Réponse 2FA choisie (base64 brut, issue de `choices_raw`).
+</ParamField>
+
+<ParamField body="x_token" type="string" required>
+  Token X récupéré dans la réponse `/login`.
+</ParamField>
+
+<ParamField body="twofa_token" type="string" required>
+  Token 2FA récupéré dans la réponse `/login`.
+</ParamField>
+
+<ParamField body="gtk" type="string" required>
+  GTK récupéré dans la réponse `/login`.
+</ParamField>
+
+### Exemple de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST http://localhost:8080/login/2fa \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "mon.identifiant",
+    "password": "monMotDePasse",
+    "cn": "...",
+    "cv": "Qm91cg==",
+    "x_token": "...",
+    "twofa_token": "...",
+    "gtk": "..."
+  }'
+```
+
+```python Python
+import requests
+
+resp = requests.post("http://localhost:8080/login/2fa", json={
+    "username": "mon.identifiant",
+    "password": "monMotDePasse",
+    "cn": "...",
+    "cv": "Qm91cg==",
+    "x_token": "...",
+    "twofa_token": "...",
+    "gtk": "..."
+})
+print(resp.json())
+```
+
+</CodeGroup>
+
+### Réponses
+
+#### Succès (code 200)
+
+```json
+{
+  "success": true,
+  "code": 200,
+  "data": { ... }
+}
+```
+
+#### Échec (code 401)
+
+```json
+{
+  "success": false,
+  "code": 401,
+  "message": "Réponse 2FA incorrecte"
+}
+```
+
+---
+
+## GET /health
+
+Vérification de fonctionnement du microservice.
+
+### Exemple de requête
+
+<CodeGroup>
+
+```bash cURL
+curl http://localhost:8080/health
+```
+
+```python Python
+import requests
+print(requests.get("http://localhost:8080/health").json())
+```
+
+</CodeGroup>
+
+### Réponse
+
+```json
+{"status": "ok"}
+```
+
+---
+
+## Structures de données
+
+### TwoFAChallenge
+
+Objet renvoyé quand la double authentification est requise.
+
+| Champ | Type | Description |
+| --- | --- | --- |
+| `required` | boolean | Toujours `true` |
+| `question` | string | Question décodée en clair |
+| `choices` | string[] | Réponses décodées en clair |
+| `x_token` | string | Token à renvoyer dans `/login/2fa` |
+| `twofa_token` | string | Token 2FA à renvoyer |
+| `gtk` | string | GTK à renvoyer |
+
+### LoginResponse
+
+Réponse générique du microservice.
+
+| Champ | Type | Description |
+| --- | --- | --- |
+| `success` | boolean | `true` si la requête a réussi |
+| `code` | integer | Code de retour (`200`, `250`, `401`, etc.) |
+| `message` | string | Message d'erreur éventuel |
+| `data` | object | Données du compte (si succès) |
+
+---
+
+## Codes de retour ÉcoleDirecte
+
+| Code | Signification |
+| --- | --- |
+| `200` | Connexion réussie |
+| `250` | Double authentification requise |
+| Autres | Erreur d'identifiants ou problème côté ÉcoleDirecte |

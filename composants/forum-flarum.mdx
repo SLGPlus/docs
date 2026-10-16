@@ -1,0 +1,119 @@
+---
+title: "Forum Flarum : communauté des élèves avec modération IA"
+description: "SLGPlus intègre Flarum 1.8 comme forum communautaire. Les comptes sont créés automatiquement, les messages sont modérés par IA (Gemini et Cerebras) et des limites quotidiennes protègent contre le spam."
+sidebarTitle: "Forum Flarum"
+icon: "comments"
+---
+
+Le forum est géré par une installation [Flarum](https://flarum.org/) 1.8 située dans `api_source/flarum/`. L'API Python sert de passerelle : elle crée les comptes, modère les contenus via IA et applique des limites quotidiennes.
+
+## Extensions installées
+
+Le `composer.json` référence les extensions suivantes :
+
+| Extension | Rôle |
+| --- | --- |
+| `flarum/approval` | Modération des messages |
+| `flarum/bbcode` | Formatage BBCode |
+| `flarum/emoji` | Emojis |
+| `flarum/extension-manager` | Gestion des extensions |
+| `flarum/flags` | Signalement de contenus |
+| `flarum/likes` | J'aime |
+| `flarum/lock` | Verrouillage de discussions |
+| `flarum/markdown` | Markdown |
+| `flarum/mentions` | Mentions utilisateur |
+| `flarum/nicknames` | Surnoms |
+| `flarum/pusher` | Temps réel |
+| `flarum/statistics` | Statistiques |
+| `flarum/sticky` | Discussions épinglées |
+| `flarum/subscriptions` | Abonnements |
+| `flarum/suspend` | Suspensions |
+| `flarum/tags` | Tags et catégories |
+
+Le dossier `extend/` contient deux extensions locales :
+
+- `CorsMiddleware.php` : CORS pour les origines autorisées
+- `BadWordsListener.php` : modération locale + modération IA via Cerebras
+
+## Passerelle API Python
+
+### Création automatique de compte
+
+Lors de la première connexion, `POST /forum/login/flarum` crée l'utilisateur `Prénom_Nom` dans Flarum et l'ajoute au groupe correspondant à sa classe :
+
+| Classe | Groupe |
+| --- | --- |
+| 6e | 5 |
+| 5e | 6 |
+| 4e | 7 |
+| 3e | 8 |
+
+Le mot de passe est dérivé de façon déterministe :
+
+```python title="Dérivation du mot de passe Flarum"
+def _derive_flarum_password(email, prenom, sexe, classe):
+    raw = f"{email.lower()}|{prenom.lower()}|{sexe.lower()}|{classe.lower()}|SLGPlus_salt_2026"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+```
+
+### Limites quotidiennes
+
+Deux compteurs par utilisateur sont suivis dans MariaDB :
+
+| Table | Limite | Rôle |
+| --- | --- | --- |
+| `forum_limit_posts` | `MAX_FORUM_POSTS` (2 par défaut) | Messages par jour |
+| `forum_limit_discussions` | `MAX_FORUM_DISCUSSIONS` (1 par défaut) | Discussions par jour |
+
+L'administrateur Flarum (id 1) n'est pas limité. Quand un utilisateur atteint sa limite de messages, il est automatiquement ajouté au groupe 9 (restriction).
+
+## Modération IA
+
+SLGPlus utilise une double modération : une en local via l'extension Flarum (`BadWordsListener`), et une via l'API Python (`_moderate_and_correct`) avec Gemini.
+
+### Modération locale (Cerebras)
+
+L'extension `BadWordsListener` vérifie chaque message avant sauvegarde :
+
+1. **Liste de mots interdits** : comparaison directe avec une liste stockée dans `badwords_fr.txt`, avec normalisation ( suppression d'espaces, substitutions 0->o, 3->e, etc.)
+2. **Modération IA via Cerebras** : si le message passe le filtre local, il est envoyé au modèle `gpt-oss-120b` de Cerebras. La réponse doit être `OUI` ou `NON: raison`.
+
+<Warning>
+  L'extension `BadWordsListener` contient une clé API Cerebras codée en dur dans le fichier PHP. Cette valeur doit être déplacée dans une variable d'environnement ou un fichier de configuration, puis renouvelée.
+</Warning>
+
+### Modération API Python (Gemini)
+
+La fonction `_moderate_and_correct` dans `app.py` modère les messages du forum via l'API Gemini (rotation entre plusieurs clés). Elle peut :
+
+- **Bloquer** le message (insultes, harcèlement, contenu choquant, spam, informations personnelles, abréviations excessives, acrostiches)
+- **Corriger** le message (orthographe, ton naturel conservé)
+
+Les raisons de blocage sont formulées comme des avertissements directs adressés à l'élève, par exemple :
+
+> "Ton message contient des insultes ! Des avertissements répétés entraîneront des sanctions !"
+
+En cas d'erreur du service Gemini, le message passe tel quel (fail-open) pour éviter de bloquer le forum.
+
+## Middleware CORS
+
+L'extension `CorsMiddleware` autorise trois origines pour les requêtes vers l'API Flarum :
+
+```php title="CorsMiddleware.php"
+protected array $allowedOrigins = [
+    'https://forum-slgplus.great-site.net',
+    'https://slgplus.shares.zrok.io',
+    'https://api-slgplus.shares.zrok.io',
+];
+```
+
+Le middleware intercepte les requêtes `OPTIONS` avant qu'elles n'atteignent le routeur Flarum.
+
+## Reset quotidien
+
+La route `POST /cron/cleancounter` remet à zéro les compteurs :
+
+1. Retire le groupe 9 de tous les utilisateurs présents dans les tables de limites
+2. Vide `forum_limit_posts` et `forum_limit_discussions`
+
+Cette tâche est lancée quotidiennement par le script `cron.py` (voir la page sur le composant Cron).

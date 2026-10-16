@@ -1,0 +1,502 @@
+---
+title: "Référence API : forum et modération"
+sidebarTitle: "Forum"
+description: "Endpoints du forum SLGPlus : authentification Flarum, création de discussions et de posts, avec modération IA automatique et limites de publication."
+icon: "messages"
+---
+
+Le forum de SLGPlus repose sur [Flarum](https://flarum.org/), orchestré par l'API principale. Cette page décrit les trois endpoints publics qui permettent aux élèves et aux professeurs de se connecter, de créer des discussions et de répondre, tout en respectant les règles de modération automatique.
+
+---
+
+## POST /forum/login/flarum
+
+Authentifie un utilisateur sur le forum Flarum. Si c'est la première fois, l'utilisateur est créé automatiquement avec le bon groupe de classe.
+
+### Authentification
+
+Aucun token SLGPlus requis. L'authentification repose sur les identifiants Ecoledirecte et un dérivé de mot de passe.
+
+### Paramètres
+
+<ParamField body="prenom" type="string" required>
+  Prénom de l'utilisateur.
+</ParamField>
+
+<ParamField body="nom" type="string" required>
+  Nom de l'utilisateur.
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Adresse email.
+</ParamField>
+
+<ParamField body="sexe" type="string" required>
+  `M` ou `F`.
+</ParamField>
+
+<ParamField body="classe" type="string" required>
+  Classe, par exemple `3F` ou `5B`.
+</ParamField>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/forum/login/flarum" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "prenom": "Alice",
+    "nom": "Durand",
+    "email": "alice.durand@example.com",
+    "sexe": "F",
+    "classe": "3F",
+    "IP": "10.0.0.2"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/forum/login/flarum"
+payload = {
+    "prenom": "Alice",
+    "nom": "Durand",
+    "email": "alice.durand@example.com",
+    "sexe": "F",
+    "classe": "3F",
+    "IP": "10.0.0.2"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/forum/login/flarum", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    prenom: "Alice",
+    nom: "Durand",
+    email: "alice.durand@example.com",
+    sexe: "F",
+    classe: "3F",
+    IP: "10.0.0.2"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200)
+
+<ResponseField name="token" type="string">
+  Token de session Flarum.
+</ResponseField>
+
+<ResponseField name="userId" type="string">
+  Identifiant utilisateur Flarum.
+</ResponseField>
+
+<ResponseField name="firstTime" type="boolean">
+  `true` si l'utilisateur vient d'être créé, `false` s'il existait déjà.
+</ResponseField>
+
+<CodeGroup>
+
+```json Connexion normale
+{
+  "token": "flarum-token-abc123",
+  "userId": "42",
+  "firstTime": false
+}
+```
+
+```json Première connexion
+{
+  "token": "flarum-token-abc123",
+  "userId": "42",
+  "firstTime": true
+}
+```
+
+</CodeGroup>
+
+### Réponse d'erreur (400)
+
+```json
+{
+  "message": "missing_fields"
+}
+```
+
+### Réponse d'erreur (502)
+
+```json
+{
+  "message": "creation_failed",
+  "error": "..."
+}
+```
+
+---
+
+## POST /forum/discussion
+
+Crée une nouvelle discussion sur le forum Flarum après une analyse de modération automatique via Gemini. Les limites de publication s'appliquent.
+
+### Authentification
+
+Token Flarum requis dans le corps JSON.
+
+### Paramètres
+
+<ParamField body="title" type="string" required>
+  Titre de la discussion.
+</ParamField>
+
+<ParamField body="content" type="string" required>
+  Contenu initial de la discussion.
+</ParamField>
+
+<ParamField body="tag_id" type="string" required>
+  Identifiant du tag Flarum associé.
+</ParamField>
+
+<ParamField body="flarum_token" type="string" required>
+  Token de session Flarum obtenu via `/forum/login/flarum`.
+</ParamField>
+
+<ParamField body="flarum_user_id" type="string" required>
+  Identifiant utilisateur Flarum.
+</ParamField>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/forum/discussion" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "title": "Conseils pour le brevet",
+    "content": "Vous avez des astuces pour réviser l\'histoire-géo ?",
+    "tag_id": "8",
+    "flarum_token": "flarum-token-abc123",
+    "flarum_user_id": "42",
+    "IP": "10.0.0.2"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/forum/discussion"
+payload = {
+    "title": "Conseils pour le brevet",
+    "content": "Vous avez des astuces pour réviser l'histoire-géo ?",
+    "tag_id": "8",
+    "flarum_token": "flarum-token-abc123",
+    "flarum_user_id": "42",
+    "IP": "10.0.0.2"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/forum/discussion", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    title: "Conseils pour le brevet",
+    content: "Vous avez des astuces pour réviser l'histoire-géo ?",
+    tag_id: "8",
+    flarum_token: "flarum-token-abc123",
+    flarum_user_id: "42",
+    IP: "10.0.0.2"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200 / 201)
+
+Le corps de réponse contient la discussion créée au format JSON API de Flarum.
+
+### Réponses d'erreur
+
+<CodeGroup>
+
+```json 400 - champs manquants
+{ "message": "missing_fields" }
+```
+
+```json 403 - limite de discussions atteinte
+{
+  "message": "refused",
+  "reason": "Tu as atteint la limite de 1 discussion ! Pour plus d'infos, consulte le topic 'Bienvenue !'"
+}
+```
+
+```json 403 - contenu bloqué par la modération
+{
+  "message": "refused",
+  "reason": "A propos du contenu: Ton message contient un contenu choquant, ce n'est pas tolere sur ce forum !"
+}
+```
+
+</CodeGroup>
+
+---
+
+## POST /forum/post
+
+Ajoute une réponse à une discussion existante. Le contenu est soumis à la modération automatique. Les limites de publication s'appliquent.
+
+### Authentification
+
+Token Flarum requis dans le corps JSON.
+
+### Paramètres
+
+<ParamField body="content" type="string" required>
+  Contenu du post.
+</ParamField>
+
+<ParamField body="discussion_id" type="string" required>
+  Identifiant de la discussion Flarum.
+</ParamField>
+
+<ParamField body="flarum_token" type="string" required>
+  Token de session Flarum.
+</ParamField>
+
+<ParamField body="flarum_user_id" type="string" required>
+  Identifiant utilisateur Flarum.
+</ParamField>
+
+<ParamField body="IP" type="string" required>
+  Adresse IP du client.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/forum/post" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "content": "Merci pour les conseils !",
+    "discussion_id": "15",
+    "flarum_token": "flarum-token-abc123",
+    "flarum_user_id": "42",
+    "IP": "10.0.0.2"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/forum/post"
+payload = {
+    "content": "Merci pour les conseils !",
+    "discussion_id": "15",
+    "flarum_token": "flarum-token-abc123",
+    "flarum_user_id": "42",
+    "IP": "10.0.0.2"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/forum/post", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    content: "Merci pour les conseils !",
+    discussion_id: "15",
+    flarum_token: "flarum-token-abc123",
+    flarum_user_id: "42",
+    IP: "10.0.0.2"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200 / 201)
+
+Le corps de réponse contient le post créé au format JSON API de Flarum.
+
+### Réponses d'erreur
+
+<CodeGroup>
+
+```json 400 - champs manquants
+{ "message": "missing_fields" }
+```
+
+```json 403 - limite de posts atteinte
+{
+  "message": "refused",
+  "reason": "Tu as atteint la limite de 2 messages !"
+}
+```
+
+```json 403 - contenu bloqué par la modération
+{
+  "message": "refused",
+  "reason": "Ton message contient des insultes ! Des avertissements repetes entraineront des sanctions !"
+}
+```
+
+</CodeGroup>
+
+---
+
+## Modération automatique
+
+Chaque titre et contenu de discussion/post est analysé par l'API Gemini avant publication. Le système bloque automatiquement :
+
+- les insultes ciblées ou le harcèlement
+- les menaces ou le ton agressif hostile
+- les contenus choquants, sexuels ou violents
+- le spam et la publicité
+- les informations personnelles identifiables
+- les termes "brainrot" excessifs (skibidi, sigma, etc.)
+- les insultes cachées par acrostiche
+
+Si le contenu est accepté, Gemini le corrige en français correct tout en gardant un ton naturel.
+
+<Info>
+  Le prompt complet de modération est visible dans le fichier `app.py` du backend, fonction `_moderate_and_correct()`. Il est conçu pour un public collégien (de la 6ème à la 3ème).
+</Info>
+
+---
+
+## Limites de publication
+
+Le forum impose des quotas quotidiens stockés en base MariaDB :
+
+| Ressource | Limite |
+| --- | --- |
+| Discussions | `MAX_FORUM_DISCUSSIONS` (configurable dans `config.yml`) |
+| Posts | `MAX_FORUM_POSTS` (configurable dans `config.yml`) |
+
+Les compteurs sont remis à zéro chaque jour par le cron `cleancounter`. Si un utilisateur dépasse la limite de posts, il est automatiquement assigné au groupe Flarum `9` (généralement un groupe de restriction).
+
+<Warning>
+  Il existe un bug connu dans `CreatePost` : si `flarum_user_id == 1` (admin), la variable `headers` est utilisée avant d'être définie. Cela provoque une erreur côté serveur. Ce cas de figure ne devrait pas se produire en conditions normales car l'admin contourne la modération, mais le code est défectueux sur cette branche.
+</Warning>
+
+---
+
+## POST /cron/cleancounter
+
+Réinitialise les compteurs de publications du forum et retire les restrictions de groupe. Destiné à être appelé par le script cron quotidien.
+
+### Authentification
+
+Token cron requis dans le corps JSON. Le token attendu est celui configuré dans `config.yml` sous `security.crontoken`.
+
+### Paramètres
+
+<ParamField body="token" type="string" required>
+  Token de cron valide.
+</ParamField>
+
+### Exemples de requête
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST "https://api-slgplus.shares.zrok.io/cron/cleancounter" \
+  -H "Content-Type: application/json" \
+  -H "skip_zrok_interstitial: 1" \
+  -d '{
+    "token": "votre-crontoken-securise"
+  }'
+```
+
+```python Python
+import requests
+
+url = "https://api-slgplus.shares.zrok.io/cron/cleancounter"
+payload = {
+    "token": "votre-crontoken-securise"
+}
+
+r = requests.post(url, json=payload, headers={"skip_zrok_interstitial": "1"})
+print(r.json())
+```
+
+```javascript JavaScript
+fetch("https://api-slgplus.shares.zrok.io/cron/cleancounter", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "skip_zrok_interstitial": "1"
+  },
+  body: JSON.stringify({
+    token: "votre-crontoken-securise"
+  })
+})
+.then(r => r.json())
+.then(data => console.log(data));
+```
+
+</CodeGroup>
+
+### Réponse de succès (200)
+
+```json
+{
+  "message": "success"
+}
+```
+
+### Réponse d'erreur (401)
+
+```json
+{
+  "message": "Not authorized"
+}
+```
+
+<Info>
+  En pratique, le script `cron.py` appelle cet endpoint localement via `http://localhost:5000/cron/cleancounter`. Cette adresse fixe signifie que le cron et l'API doivent tourner sur le même serveur.
+</Info>

@@ -1,0 +1,424 @@
+---
+title: "Frontend : interface web du portail SLGPlus"
+description: "Le frontend de SLGPlus est une interface statique en HTML, CSS et JavaScript vanilla. Elle gère la connexion, les actualités, les objets perdus, les idées, le CDI et le lien vers le forum."
+sidebarTitle: "Frontend"
+icon: "code"
+---
+
+Le frontend de SLGPlus repose sur une pile légère : HTML, CSS et JavaScript, sans étape de build. Bootstrap 5.3 et ses icônes sont chargés depuis jsDelivr. Deux scripts PHP assurent le compteur de visites et la récupération du menu de la cantine.
+
+## Arborescence
+
+<Tree>
+  <Tree.Folder name="SLGPlus-Frontend" defaultOpen>
+    <Tree.File name="index.html" />
+    <Tree.File name="rindex.html" />
+    <Tree.File name="article.html" />
+    <Tree.File name="lost.html" />
+    <Tree.File name="Idea.html" />
+    <Tree.File name="about.html" />
+    <Tree.File name="tuto.html" />
+    <Tree.File name="doom.html" />
+    <Tree.File name="403.html, 404.html" />
+    <Tree.Folder name="scripts" defaultOpen>
+      <Tree.Folder name="common" defaultOpen>
+        <Tree.File name="api.js" />
+        <Tree.File name="navbar.js" />
+        <Tree.File name="tooltip.js" />
+        <Tree.File name="graph_lib.js" />
+        <Tree.File name="keypress.js" />
+      </Tree.Folder>
+      <Tree.File name="modal.js" />
+    </Tree.Folder>
+    <Tree.Folder name="styles" defaultOpen>
+      <Tree.File name="styles.css" />
+      <Tree.File name="login.css" />
+      <Tree.File name="rindex.css" />
+      <Tree.File name="tooltip.css" />
+      <Tree.File name="license.css" />
+      <Tree.File name="idee.css" />
+    </Tree.Folder>
+    <Tree.Folder name="php_scripts" defaultOpen>
+      <Tree.File name="counter.php" />
+      <Tree.File name="get_menu_pdf.php" />
+    </Tree.Folder>
+    <Tree.Folder name="assets">
+      <Tree.File name="logos, favicons, images, audio..." />
+    </Tree.Folder>
+  </Tree.Folder>
+</Tree>
+
+## Communication avec l'API
+
+L'URL de l'API est écrite en dur dans les pages : `https://api-slgplus.shares.zrok.io/` (tunnel zrok). En développement local, il est possible de modifier cette adresse dans `scripts/common/api.js`.
+
+Le fichier `scripts/common/api.js` intercepte chaque appel `fetch` pour ajouter automatiquement :
+
+- L'en-tête `skip_zrok_interstitial: SLGPlus` (requis par le tunnel)
+- Le champ `IP` du client, récupéré auprès de `api.ipify.org` et stocké dans `localStorage`
+
+<CodeGroup>
+
+```js title="api.js — interception de fetch"
+const _fetch = window.fetch;
+window.fetch = async function(input, init = {}) {
+    let request = new Request(input, init);
+
+    request.headers.set("skip_zrok_interstitial", "SLGPlus");
+
+    const ct = request.headers.get("Content-Type");
+
+    if (ct && ct.includes("application/json")) {
+        try {
+            const obj = await request.clone().json();
+            obj.IP = localStorage.getItem("IP");
+
+            request = new Request(request, {
+                body: JSON.stringify(obj)
+            });
+        } catch {}
+    }
+
+    return _fetch(request);
+};
+```
+
+</CodeGroup>
+
+## Authentification côté client
+
+Les étapes de connexion sont les suivantes :
+
+1. L'élève saisit le PIN sur `index.html` puis appelle `POST /checkeleves`
+2. En cas de succès, le token reçu est stocké dans `localStorage` sous la clé `eleves_token`
+3. Chaque page qui charge `navbar.js` vérifie le token avec `POST /checktoken` et renvoie vers `/` s'il est absent ou invalide
+4. La déconnexion appelle `POST /logout`, supprime le token et recharge la page
+
+### Clés localStorage
+
+| Clé | Usage |
+| --- | --- |
+| `eleves_token` | Token de session |
+| `IP` | Adresse IP du client |
+| `slgplus_theme` | Thème clair ou sombre |
+| `slgplus_articles` | Cache des articles (5 minutes) |
+| `slgplus_selected_article` | Article choisi dans le carrousel |
+
+## Barre de navigation
+
+`scripts/common/navbar.js` injecte la barre de navigation dans chaque page. Elle inclut :
+
+- Articles, Accueil, Objets Perdus, Ressources éducatives, Forum, À propos
+- Basculement clair/sombre via `applyTheme()`
+- Déconnexion avec appel à `/logout`
+- Vérification automatique du token à chaque chargement
+
+<CodeGroup>
+
+```js title="navbar.js — vérification du token"
+const token = localStorage.getItem("eleves_token");
+
+if (token !== null && token !== "") {
+    fetch("https://api-slgplus.shares.zrok.io/checktoken", {
+        "method": "POST",
+        "headers": {'Content-Type': "application/json"},
+        "body": JSON.stringify({
+            "token": localStorage.getItem("eleves_token")
+        })
+    }).then(response => response.json())
+    .then((data) => {
+        if (data["message"] !== "connected") {
+            redirect();
+        }
+    })
+} else {
+    redirect();
+}
+```
+
+</CodeGroup>
+
+## Scripts PHP
+
+### Compteur de visites
+
+`php_scripts/counter.php` incrémente le nombre stocké dans `counter.txt` et renvoie `{"count": n}`. Appelé par `rindex.html` pour afficher le nombre de visiteurs.
+
+```php title="counter.php"
+<?php
+$file = __DIR__ . "/counter.txt";
+if (!file_exists($file)) { file_put_contents($file, "0"); }
+$count = (int)file_get_contents($file);
+$count++;
+$success = file_put_contents($file, (string)$count);
+header('Content-Type: application/json');
+echo json_encode(["count" => $success !== false ? $count : false]);
+```
+
+### Menu de la cantine
+
+`php_scripts/get_menu_pdf.php` scrape la page `college.gonzague.com` pour trouver l'URL du PDF des menus du mois. Il restreint l'accès par CORS aux domaines du site.
+
+<CodeGroup>
+
+```php title="get_menu_pdf.php"
+<?php
+header('Content-Type: application/json');
+
+$allowed_origins = [
+    'https://dev-slgplus.great-site.net',
+    'https://slgplus.great-site.net'
+];
+
+if (isset($_SERVER['HTTP_ORIGIN']) && in_array($_SERVER['HTTP_ORIGIN'], $allowed_origins, true)) {
+    header('Access-Control-Allow-Origin: ' . $_SERVER['HTTP_ORIGIN']);
+}
+```
+
+</CodeGroup>
+
+En cas d'échec du scraping, le script retourne une URL de secours avec `fallback: true`.
+
+## Analytics avec PostHog
+
+Le frontend intègre [PostHog](https://posthog.com/) (instance européenne) pour le suivi d'usage et des erreurs. L'initialisation est identique sur toutes les pages :
+
+```js title="Initialisation PostHog (dans chaque page HTML)"
+posthog.init('phc_BskbTybbaarvkQ67ApYD3mKrbuX9cjUCQv6qRyXbyHk3', {
+    api_host: 'https://eu.i.posthog.com'
+});
+```
+
+Événements capturés :
+
+| Événement | Contexte |
+| --- | --- |
+| `login` | Connexion élève (`type: "eleves"`, `testeur: true/false`) |
+| `send_idea` | Envoi d'une idée depuis `Idea.html` |
+| `ideasenderror` | Erreur lors de l'envoi d'une idée |
+| `license_viewed` | Affichage de la page des licences |
+
+## Déploiement
+
+Le workflow `.github/workflows/main.yml` se déclenche automatiquement à chaque push. Il effectue un merge de la branche `Dev` vers `main`, puis synchronise les fichiers par FTP vers le dossier `/htdocs/` de l'hébergeur.
+
+Le fichier `.htaccess` désactive le cache pour les fichiers `.html`, `.js` et `.css`, et définit les pages d'erreur 403 et 404. Les pages ajoutent un paramètre `?cp=<horodatage>` aux liens pour contourner le cache de Safari.
+
+## Développer en local
+
+Aucune étape de build n'est requise. Pour tester localement :
+
+```bash
+php -S localhost:8000
+```
+
+Les pages appellent l'API de production par défaut : prévoir un PIN valide. Pour tester avec une API locale, modifier les URLs dans `scripts/common/api.js` et dans les pages qui appellent directement `fetch`.
+
+Le frontend de SLGPlus repose sur une pile légère : HTML, CSS et JavaScript, sans étape de build. Bootstrap 5.3 et ses icônes sont chargés depuis jsDelivr. Deux scripts PHP assurent le compteur de visites et la récupération du menu de la cantine.
+
+## Arborescence
+
+<Tree>
+  <Tree.Folder name="SLGPlus-Frontend" defaultOpen>
+    <Tree.File name="index.html" />
+    <Tree.File name="rindex.html" />
+    <Tree.File name="article.html" />
+    <Tree.File name="lost.html" />
+    <Tree.File name="Idea.html" />
+    <Tree.File name="about.html" />
+    <Tree.File name="tuto.html" />
+    <Tree.File name="doom.html" />
+    <Tree.File name="403.html, 404.html" />
+    <Tree.Folder name="scripts" defaultOpen>
+      <Tree.Folder name="common" defaultOpen>
+        <Tree.File name="api.js" />
+        <Tree.File name="navbar.js" />
+        <Tree.File name="tooltip.js" />
+        <Tree.File name="graph_lib.js" />
+        <Tree.File name="keypress.js" />
+      </Tree.Folder>
+      <Tree.File name="modal.js" />
+    </Tree.Folder>
+    <Tree.Folder name="styles" defaultOpen>
+      <Tree.File name="styles.css" />
+      <Tree.File name="login.css" />
+      <Tree.File name="rindex.css" />
+      <Tree.File name="tooltip.css" />
+      <Tree.File name="license.css" />
+      <Tree.File name="idee.css" />
+    </Tree.Folder>
+    <Tree.Folder name="php_scripts" defaultOpen>
+      <Tree.File name="counter.php" />
+      <Tree.File name="get_menu_pdf.php" />
+    </Tree.Folder>
+    <Tree.Folder name="assets">
+      <Tree.File name="logos, favicons, images, audio..." />
+    </Tree.Folder>
+  </Tree.Folder>
+</Tree>
+
+## Communication avec l'API
+
+L'URL de l'API est écrite en dur dans les pages : `https://api-slgplus.shares.zrok.io/` (tunnel zrok). En développement local, il est possible de modifier cette adresse dans `scripts/common/api.js`.
+
+Le fichier `scripts/common/api.js` intercepte chaque appel `fetch` pour ajouter automatiquement :
+
+- L'en-tête `skip_zrok_interstitial: SLGPlus` (requis par le tunnel)
+- Le champ `IP` du client, récupéré auprès de `api.ipify.org` et stocké dans `localStorage`
+
+<CodeGroup>
+
+```js title="api.js — interception de fetch"
+const _fetch = window.fetch;
+window.fetch = async function(input, init = {}) {
+    let request = new Request(input, init);
+
+    request.headers.set("skip_zrok_interstitial", "SLGPlus");
+
+    const ct = request.headers.get("Content-Type");
+
+    if (ct && ct.includes("application/json")) {
+        try {
+            const obj = await request.clone().json();
+            obj.IP = localStorage.getItem("IP");
+
+            request = new Request(request, {
+                body: JSON.stringify(obj)
+            });
+        } catch {}
+    }
+
+    return _fetch(request);
+};
+```
+
+</CodeGroup>
+
+## Authentification côté client
+
+Les étapes de connexion sont les suivantes :
+
+1. L'élève saisit le PIN sur `index.html` puis appelle `POST /checkeleves`
+2. En cas de succès, le token reçu est stocké dans `localStorage` sous la clé `eleves_token`
+3. Chaque page qui charge `navbar.js` vérifie le token avec `POST /checktoken` et renvoie vers `/` s'il est absent ou invalide
+4. La déconnexion appelle `POST /logout`, supprime le token et recharge la page
+
+### Clés localStorage
+
+| Clé | Usage |
+| --- | --- |
+| `eleves_token` | Token de session |
+| `IP` | Adresse IP du client |
+| `slgplus_theme` | Thème clair ou sombre |
+| `slgplus_articles` | Cache des articles (5 minutes) |
+| `slgplus_selected_article` | Article choisi dans le carrousel |
+
+## Barre de navigation
+
+`scripts/common/navbar.js` injecte la barre de navigation dans chaque page. Elle inclut :
+
+- Articles, Accueil, Objets Perdus, Ressources éducatives, Forum, À propos
+- Basculement clair/sombre via `applyTheme()`
+- Déconnexion avec appel à `/logout`
+- Vérification automatique du token à chaque chargement
+
+<CodeGroup>
+
+```js title="navbar.js — vérification du token"
+const token = localStorage.getItem("eleves_token");
+
+if (token !== null && token !== "") {
+    fetch("https://api-slgplus.shares.zrok.io/checktoken", {
+        "method": "POST",
+        "headers": {'Content-Type': "application/json"},
+        "body": JSON.stringify({
+            "token": localStorage.getItem("eleves_token")
+        })
+    }).then(response => response.json())
+    .then((data) => {
+        if (data["message"] !== "connected") {
+            redirect();
+        }
+    })
+} else {
+    redirect();
+}
+```
+
+</CodeGroup>
+
+## Scripts PHP
+
+### Compteur de visites
+
+`php_scripts/counter.php` incrémente le nombre stocké dans `counter.txt` et renvoie `{"count": n}`. Appelé par `rindex.html` pour afficher le nombre de visiteurs.
+
+```php title="counter.php"
+<?php
+$file = __DIR__ . "/counter.txt";
+if (!file_exists($file)) { file_put_contents($file, "0"); }
+$count = (int)file_get_contents($file);
+$count++;
+$success = file_put_contents($file, (string)$count);
+header('Content-Type: application/json');
+echo json_encode(["count" => $success !== false ? $count : false]);
+```
+
+### Menu de la cantine
+
+`php_scripts/get_menu_pdf.php` scrape la page `college.gonzague.com` pour trouver l'URL du PDF des menus du mois. Il restreint l'accès par CORS aux domaines du site.
+
+<CodeGroup>
+
+```php title="get_menu_pdf.php"
+<?php
+header('Content-Type: application/json');
+
+$allowed_origins = [
+    'https://dev-slgplus.great-site.net',
+    'https://slgplus.great-site.net'
+];
+
+if (isset($_SERVER['HTTP_ORIGIN']) && in_array($_SERVER['HTTP_ORIGIN'], $allowed_origins, true)) {
+    header('Access-Control-Allow-Origin: ' . $_SERVER['HTTP_ORIGIN']);
+}
+```
+
+</CodeGroup>
+
+En cas d'échec du scraping, le script retourne une URL de secours avec `fallback: true`.
+
+## Analytics avec PostHog
+
+Le frontend intègre [PostHog](https://posthog.com/) (instance européenne) pour le suivi d'usage et des erreurs. L'initialisation est identique sur toutes les pages :
+
+```js title="Initialisation PostHog (dans chaque page HTML)"
+posthog.init('phc_BskbTybbaarvkQ67ApYD3mKrbuX9cjUCQv6qRyXbyHk3', {
+    api_host: 'https://eu.i.posthog.com'
+});
+```
+
+Événements capturés :
+
+| Événement | Contexte |
+| --- | --- |
+| `login` | Connexion élève (`type: "eleves"`, `testeur: true/false`) |
+| `send_idea` | Envoi d'une idée depuis `Idea.html` |
+| `ideasenderror` | Erreur lors de l'envoi d'une idée |
+| `license_viewed` | Affichage de la page des licences |
+
+## Déploiement
+
+Le workflow `.github/workflows/main.yml` se déclenche automatiquement à chaque push. Il effectue un merge de la branche `Dev` vers `main`, puis synchronise les fichiers par FTP vers le dossier `/htdocs/` de l'hébergeur.
+
+Le fichier `.htaccess` désactive le cache pour les fichiers `.html`, `.js` et `.css`, et définit les pages d'erreur 403 et 404. Les pages ajoutent un paramètre `?cp=<horodatage>` aux liens pour contourner le cache de Safari.
+
+## Développer en local
+
+Aucune étape de build n'est requise. Pour tester localement :
+
+```bash
+php -S localhost:8000
+```
+
+Les pages appellent l'API de production par défaut : prévoir un PIN valide. Pour tester avec une API locale, modifier les URLs dans `scripts/common/api.js` et dans les pages qui appellent directement `fetch`.

@@ -1,0 +1,168 @@
+---
+title: "API Python : serveur principal Flask de SLGPlus"
+description: "L'API Python constitue le cœur de SLGPlus. Elle gère les sessions, les actualités, les objets perdus, les idées et la passerelle vers le forum avec Flask, Flask-RESTful et Waitress."
+sidebarTitle: "API Python"
+icon: "python"
+---
+
+L'API principale est écrite en Python avec Flask et Flask-RESTful. Elle sert les requêtes via Waitress sur 32 threads et utilise un pool de connexions MariaDB pour gérer la charge (jusqu'à 400 connexions simultanées).
+
+## Structure de app.py
+
+Le fichier `api_source/app.py` est le point d'entrée unique. Il est organisé en sections :
+
+1. **Configuration** : chargement de `config.yml`
+2. **Pool de connexions DB** : `mariadb.ConnectionPool`
+3. **Utilitaires** : génération d'ID, dérivation de mots de passe Flarum, rotation des clés Gemini
+4. **Sessions** : création, validation et destruction des tokens
+5. **Routes Flask-RESTful** : ressources enregistrées sur l'API
+
+```python title="Plan du fichier app.py"
+# CONFIG              <- yaml.safe_load("config.yml")
+# APP                 <- Flask + CORS
+# DB POOL             <- mariadb.ConnectionPool
+# ANALYTICS           <- stats.xlsx
+# HELPERS             <- fonctions utilitaires
+# SESSIONS            <- _session_valid, _create_session, _destroy_session
+# ROUTES              <- classes Resource Flask-RESTful
+# API ROUTES          <- api.add_resource(...)
+# START               <- waitress.serve(...)
+```
+
+## Configuration
+
+L'API attend un fichier `config.yml` placé dans le dossier d'exécution. Les clés principales :
+
+| Section | Clé | Rôle |
+| --- | --- | --- |
+| `server` | `host`, `port` | Adresse et port d'écoute (5000 par défaut) |
+| `server` | `version` | Version renvoyée par `GET /` |
+| `server` | `maintenance` | Mode maintenance et raison |
+| `security` | `session_ttl` | Durée de vie d'une session en secondes (inactivité) |
+| `security` | `testers_pin` | PIN des testeurs |
+| `security` | `crontoken` | Jeton attendu par `/cron/cleancounter` |
+| `database` | `host`, `port`, `user`, `password`, `database`, `pool_size` | Connexion MariaDB |
+| `apikeys` | `flarum_master` | Clé d'API maître de Flarum |
+| `apikeys` | `gemini_keys` | Liste de clés Gemini (rotation) |
+| `forum` | `limits.discussions`, `limits.posts` | Limites quotidiennes du forum |
+
+<Warning>
+  Certaines clés (`crontoken`, `forum.limits`) sont lues par `app.py` mais absentes du modèle `config_template.yml`. Elles doivent être ajoutées manuellement. Le fichier `config.yml` ne doit jamais être commité.
+</Warning>
+
+## Pool de connexions MariaDB
+
+```python title="Initialisation du pool"
+POOL = mariadb.ConnectionPool(
+    pool_name="slgpool",
+    pool_size=DB_CONFIG["pool_size"],  # 64 par défaut
+    host=DB_CONFIG["host"],
+    port=DB_CONFIG["port"],
+    user=DB_CONFIG["user"],
+    password=DB_CONFIG["password"],
+    database=DB_CONFIG["database"]
+)
+
+def db():
+    return POOL.get_connection()
+```
+
+## Fonctions utilitaires principales
+
+### Génération d'identifiants
+
+```python title="_generate_id()"
+def _generate_id():
+    tid = []
+    for i in range(6):
+        r = random.randint(0, 2)
+        if r == 0:
+            tid.append(alphabet[random.randint(0, 25)])
+        elif r == 1:
+            tid.append(alphabetmaj[random.randint(0, 25)])
+        else:
+            tid.append(str(random.randint(0, 9)))
+    return "".join(tid)
+```
+
+### Rotation des clés Gemini
+
+```python title="Rotation des clés API"
+def _get_next_gemini_key():
+    global _gemini_key_index
+    key = GEMINI_API_KEYS[_gemini_key_index % len(GEMINI_API_KEYS)]
+    _gemini_key_index += 1
+    return key
+```
+
+### Dérivation du mot de passe Flarum
+
+```python title="Dérivation de mot de passe"
+def _derive_flarum_password(email, prenom, sexe, classe):
+    raw = f"{email.lower()}|{prenom.lower()}|{sexe.lower()}|{classe.lower()}|SLGPlus_salt_2026"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+```
+
+## Journalisation des requêtes
+
+Chaque requête est loguée avec la méthode, le chemin et l'IP du client :
+
+```python title="before_request"
+@app.before_request
+def log_request():
+    args = request.get_json(silent=True) or {}
+    print(f"[ REQUEST ] {_get_time_string()} --> {request.method} {request.path} {args.get('IP','?')}")
+```
+
+## Routes enregistrées
+
+| Route | Classe | Description |
+| --- | --- | --- |
+| `GET /` | `Ping` | Version et état de maintenance |
+| `POST /login` | `Login` | Connexion par rôle (PIN + user) |
+| `POST /checkeleves` | `CheckEleves` | Connexion élèves avec PIN testeur |
+| `POST /logout` | `Logout` | Déconnexion et destruction de session |
+| `POST /checktoken` | `CheckToken` | Vérification de token |
+| `GET /news` | `News` | Liste des articles approuvés |
+| `POST /news` | `News` | Création ou suppression d'article |
+| `POST /checkarticle` | `CheckArticle` | Statut d'un article |
+| `GET /lostandfound` | `LostAndFound` | Liste des objets perdus |
+| `POST /lostandfound` | `LostAndFound` | Ajout/suppression d'objet (rôle `bvs`) |
+| `POST /idea` | `Idea` | Déposer une idée (rôle `eleves`) |
+| `POST /admin/setpin` | `SetPIN` | Modifier un PIN (rôle `admin`) |
+| `POST /admin/articles` | `ApproveArticle` | Modérer les articles (rôle `admin`) |
+| `POST /admin/waitnews` | `GetWaitingArticles` | Articles en attente (rôle `admin`) |
+| `POST /forum/login/flarum` | `LoginForum` | Connexion au forum Flarum |
+| `POST /forum/post` | `CreatePost` | Publier un message (modération IA) |
+| `POST /forum/discussion` | `CreateDiscussion` | Créer une discussion (modération IA) |
+| `POST /cron/cleancounter` | `CleanCounters` | Remise à zéro des compteurs forum |
+
+## Routes définies mais non enregistrées
+
+<Note>
+  Trois classes sont définies dans `app.py` mais ne sont pas ajoutées à l'API avec `api.add_resource()`. Elles ne sont donc pas accessibles :
+</Note>
+
+| Classe | Description |
+| --- | --- |
+| `LoginED1` | Relais `POST /login` vers le microservice Go (`localhost:8080`) |
+| `LoginED2` | Relais `POST /login/2fa` vers le microservice Go |
+| `ProxyImage` | Proxy d'images ÉcoleDirecte avec simulation d'un navigateur |
+
+<Warning>
+  La présence de ces routes non enregistrées est une limitation connue. Le frontend appelle actuellement le microservice Go directement pour la connexion ÉcoleDirecte.
+</Warning>
+
+## Démarrage
+
+```python title="Point d'entrée"
+if __name__ == "__main__":
+    serve(
+        app,
+        host=CONFIG["server"]["host"],
+        port=CONFIG["server"]["port"],
+        threads=32
+    )
+```
+
+Le serveur écoute sur `0.0.0.0:5000` par défaut. En production, il est exposé via le tunnel zrok `api-slgplus.shares.zrok.io`.

@@ -1,0 +1,119 @@
+---
+title: "API SLGPlus : protocole, URL et convention d'échanges"
+sidebarTitle: "Introduction"
+description: "Base URL, format JSON et en-têtes requis pour appeler l'API SLGPlus. Découvrez la structure des requêtes, la gestion des sessions et les règles d'authentification."
+icon: "server"
+---
+
+L'API SLGPlus est une interface REST en JSON. Toutes les requêtes transitent en HTTPS via un tunnel zrok vers le serveur principal. Le frontend injecte automatiquement le champ `IP` dans le corps JSON de chaque requête. L'API enregistre cette adresse avec la session active pour des raisons de traçabilité.
+
+## Points d'entrée
+
+| Environnement | URL de base |
+| --- | --- |
+| Production | `https://api-slgplus.shares.zrok.io/` |
+| Local (développement) | `http://localhost:5000/` |
+
+## En-têtes obligatoires
+
+Toutes les requêtes doivent inclure ces deux en-têtes :
+
+```text
+Content-Type: application/json
+skip_zrok_interstitial: 1
+```
+
+Le corps de chaque requête `POST` et `GET` est un objet JSON. Le frontend Firefox remplit un champ additionnel automatique. Si vous consommez l'API hors du site officiel, utilisez [site de documentation] pour comprendre la structure.
+
+L'en-tête `skip_zrok_interstitial` est vital. Sans lui, les clients rebondissent vers une page d'interstitielle qui bloque chaque appel.
+
+## CORS
+
+Le serveur autorise toutes les origines. Les en-têtes envoyés par défaut valident les requêtes depuis n'importe quel domaine.
+
+## Format des réponses
+
+Chaque réponse suivante est un objet JSON contenant au moins une clé. Exemple pour un succès :
+
+```json
+{
+  "message": "success"
+}
+```
+
+## Codes d'erreur courants
+
+| Code | Signification | Cas d'usage |
+| --- | --- | --- |
+| `400` | Requête mal formée | Champ manquant ou type incorrect |
+| `401` | Non authentifié | Token absent, invalide ou PIN erroné |
+| `403` | Accès interdit | Rôle insuffisant ou limite atteinte |
+| `502` | Service externe indisponible | Le microservice Go ou Flarum ne répond pas |
+| `500` | Erreur interne | Exception Python non gérée |
+
+## Vue d'ensemble des routes
+
+### Session et authentification
+
+| Méthode | Route | Accès | Description |
+| --- | --- | --- | --- |
+| `GET` | `/` | public | Ping général |
+| `POST` | `/login` | public | Connexion par rôle et PIN |
+| `POST` | `/checkeleves` | public | Connexion élèves avec gestion du PIN testeur |
+| `POST` | `/logout` | public | Destruction de la session |
+| `POST` | `/checktoken` | public | Validation d'un token |
+
+### Actualités
+
+| Méthode | Route | Accès | Description |
+| --- | --- | --- | --- |
+| `GET` | `/news` | public | Liste des articles approuvés |
+| `POST` | `/news` | token | Création ou suppression d'article |
+| `POST` | `/checkarticle` | public | État d'un article (approuvé, en attente, inexistant) |
+
+### Objets perdus et idées
+
+| Méthode | Route | Accès | Description |
+| --- | --- | --- | --- |
+| `GET` | `/lostandfound` | public | Liste des objets perdus |
+| `POST` | `/lostandfound` | rôle `bvs` | Ajout ou suppression d'un objet |
+| `POST` | `/idea` | rôle `eleves` | Déposer une idée dans la boîte à idées |
+
+### Administration
+
+| Méthode | Route | Accès | Description |
+| --- | --- | --- | --- |
+| `POST` | `/admin/setpin` | rôle `admin` | Modifier le PIN d'un rôle |
+| `POST` | `/admin/waitnews` | rôle `admin` | Articles en attente de modération |
+| `POST` | `/admin/articles` | rôle `admin` | Approuver, supprimer ou modifier un article |
+
+### Forum
+
+| Méthode | Route | Accès | Description |
+| --- | --- | --- | --- |
+| `POST` | `/forum/login/flarum` | public | Connexion automatique à Flarum |
+| `POST` | `/forum/post` | token Flarum | Publier un message (modération IA incluse) |
+| `POST` | `/forum/discussion` | token Flarum | Créer une discussion (modération IA incluse) |
+| `POST` | `/cron/cleancounter` | jeton cron | Remise à zéro des compteurs du forum |
+
+<CardGroup>
+  <Card title="Session et connexion" icon="key" href="/reference/session">
+    Jetons, rôles et cycle de vie d'une session
+  </Card>
+
+  <Card title="Actualités" icon="newspaper" href="/reference/actualites">
+    Consulter, rédiger et modérer les articles
+  </Card>
+
+  <Card title="Objets perdus et idées" icon="box-open" href="/reference/objets-perdus-idees">
+    Gestion BVS et boîte à idées élèves
+  </Card>
+
+  <Card title="Administration" icon="shield-halved" href="/reference/administration">
+    PIN, files d'attente et validation
+  </Card>
+
+  <Card title="Forum" icon="comments" href="/reference/forum">
+    Authentification Flarum, messages et limites
+  </Card>
+</CardGroup>
