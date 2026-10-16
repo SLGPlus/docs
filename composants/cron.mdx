@@ -18,7 +18,7 @@ print("SLGPlus Tâches du jour")
 print("Nettoyage des compteurs quotidiens...")
 
 url = 'http://localhost:5000/cron/cleancounter'
-payload = {'token': 'SLGPLUS__CRONJOB_DAILY'}
+payload = {'token': '<votre-crontoken>'}
 
 response = requests.post(url, json=payload)
 print(response.text)
@@ -27,7 +27,7 @@ print("Tâches exécutées avec succès !")
 ```
 
 <Warning>
-  Le jeton `SLGPLUS__CRONJOB_DAILY` est codé en dur dans le fichier `cron.py`. Cette valeur doit être déplacée dans une variable d'environnement ou le fichier `config.yml`, puis renouvelée régulièrement.
+  Le jeton est codé en dur dans le fichier `cron.py`. Cette valeur doit être déplacée dans une variable d'environnement ou le fichier `config.yml`, puis renouvelée régulièrement.
 </Warning>
 
 ## Problèmes connus
